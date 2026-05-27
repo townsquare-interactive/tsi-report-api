@@ -28,9 +28,10 @@
 //   Agent 5: Note Writer (Haiku)     — formats + posts internal note to Freshdesk ticket
 //   MongoDB write                    — persists full event
 //
-// Auth: x-api-key header
+// Auth: x-api-key header (admin key only — verifyAdminKey from lib/auth.ts)
 
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyAdminKey } from '@/lib/auth';
 
 export const maxDuration = 300; // 5 minutes — pipeline runs 3 Sonnet calls in ~2-3 min
 import { fetchClientData } from '@/lib/retention/fetcher';
@@ -52,10 +53,8 @@ export async function GET(request: NextRequest) {
 }
 
 async function handleRetention(request: NextRequest) {
-  const apiKey = request.headers.get('x-api-key');
-  if (!apiKey || apiKey !== process.env.TSI_API_KEY) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const authError = verifyAdminKey(request);
+  if (authError) return authError;
 
   // ── Parse payload ──────────────────────────────────────────────────────────
   let gpid: string | null = null;
