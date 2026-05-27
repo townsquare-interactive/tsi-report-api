@@ -4,7 +4,7 @@
 
 **Purpose:** Main report API route. Orchestrates all platform fetches for a given client.
 
-**Auth:** `x-api-key` header required. Value must match `TSI_API_KEY` Vercel env var. Returns 401 if missing or wrong.
+**Auth:** `x-api-key` header via `verifyKey()` from `lib/auth.ts` — accepts TSI_API_KEY (admin) OR TSI_API_KEY_MANNY (read-only). Returns 401 if missing or wrong.
 
 **Parameters:**
 - `gpid` (string, required) — GPID e.g. `TI CASAED001`. Resolved to all platform IDs via `resolveFromGpid()`.
@@ -20,7 +20,7 @@
 
 **Purpose:** Cancellation retention brief API. Triggered by Freshdesk "Cancellation Request" webhook or GET for manual testing.
 
-**Auth:** `x-api-key` header. Returns 401 if missing or wrong.
+**Auth:** `x-api-key` header via `verifyAdminKey()` from `lib/auth.ts` — admin key only (TSI_API_KEY). Returns 401 if missing or wrong.
 
 **Webhook payload (POST):**
 ```json
