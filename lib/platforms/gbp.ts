@@ -181,4 +181,12 @@ export async function getGbpReviews(locationId: string): Promise<GbpReview[]> {
   };
 
   return (data.reviews ?? []).map((r) => ({
-    reviewId: r.revi
+    reviewId: r.reviewId,
+    rating: r.starRating,
+    comment: r.comment ?? null,
+    reviewer: r.reviewer?.displayName ?? 'Anonymous',
+    createTime: r.createTime,
+    hasReply: !!r.reviewReply,
+  }));
+}
+

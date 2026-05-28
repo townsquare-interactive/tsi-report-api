@@ -150,3 +150,16 @@ export async function getYextData(gpid: string, periodDays = 90): Promise<YextLi
       };
     }
   }
+
+  return {
+    locationId,
+    syncedListings,
+    totalListings,
+    averageScore: null,
+    impressions,
+    actions,
+    accuracy,
+    actionBreakdown,
+  };
+}
+

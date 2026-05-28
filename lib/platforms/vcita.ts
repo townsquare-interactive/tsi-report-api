@@ -164,4 +164,8 @@ export async function getVcitaData(
     conversations: conversationsThisPeriod,
     invoiceItems,
     estimateItems,
- 
+    paymentItems,
+    leadSamples,
+  };
+}
+

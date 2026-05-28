@@ -617,4 +617,21 @@ export async function runGapAuditor(data: FetchedData, periodDays = 90): Promise
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
-    thr
+    throw new Error(`Gap auditor (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
+  }
+
+  const result = await response.json() as { content: Array<{ type: string; text: string }> };
+  const text = result.content?.[0]?.text;
+  if (!text) throw new Error('Empty response from gap auditor');
+
+  try {
+    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON in gap auditor response');
+    return JSON.parse(match[0]) as GapAuditResult;
+  } catch {
+    throw new Error(`Gap auditor returned unparseable JSON: ${text.slice(0, 300)}`);
+  }
+}
+
+

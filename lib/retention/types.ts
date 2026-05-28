@@ -176,4 +176,5 @@ export interface GapAuditResult {
   // Ranked by severity — top items for the CSR to address
   prioritizedGaps: PrioritizedGap[];
   // The single most important gap or risk, in one sentence
-  topGap:
+  topGap: string;
+}

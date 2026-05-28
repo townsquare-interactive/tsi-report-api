@@ -257,4 +257,20 @@ export async function writeRetentionNote(
     },
     body: JSON.stringify({
       body: fullNoteHtml,
-      private: true,  // internal note — no
+      private: true,  // internal note — not visible to client
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  if (!fdResponse.ok) {
+    const errText = await fdResponse.text();
+    throw new Error(`Freshdesk note POST failed: ${fdResponse.status} — ${errText.slice(0, 200)}`);
+  }
+
+  const fdResult = await fdResponse.json() as { id: number };
+  return {
+    noteId: fdResult.id,
+    noteUrl: `https://${domain}/helpdesk/tickets/${ticketId}`,
+  };
+}
+

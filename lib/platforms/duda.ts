@@ -131,4 +131,8 @@ export async function getDudaData(
     periodStart: from,
     periodEnd: to,
     totalPages: pages.length,
-    publishedP
+    publishedPosts,
+    siteUpdates,
+  };
+}
+

@@ -430,4 +430,8 @@ export async function runAnalyst(
     const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     const match = stripped.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No JSON object found in response');
-    return JSON.parse(m
+    return JSON.parse(match[0]) as AnalystOutput;
+  } catch {
+    throw new Error(`Analyst returned unparseable JSON: ${text.slice(0, 300)}`);
+  }
+}

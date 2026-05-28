@@ -432,4 +432,8 @@ export async function runFormatter(
     const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     const match = stripped.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No JSON in formatter response');
-    return JSON.parse(match[0]) as Retention
+    return JSON.parse(match[0]) as RetentionBrief;
+  } catch {
+    throw new Error(`Formatter returned unparseable JSON: ${text.slice(0, 300)}`);
+  }
+}
