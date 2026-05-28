@@ -135,10 +135,10 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 
 ## lib/platforms/gbp.ts
 
-**Purpose:** GBP insights, live post count, and reviews.
+**Purpose:** GBP insights, search keywords, live post count, and reviews.
 
 **Exports:**
-- `getGbpInsights(locationId, periodDays)` — 7 metrics via `getDailyMetricsTimeSeries` + `getGbpPostsLive`. Returns totals including `postsLive`.
+- `getGbpInsights(locationId, periodDays)` — 7 metrics via `getDailyMetricsTimeSeries` + `getGbpPostsLive` + `getGbpSearchKeywords` (all parallel). Returns totals including `postsLive` and `searchKeywords`.
 - `getGbpPostsLive(locationId, accessToken?)` — counts LIVE posts via GBP v4 API.
 - `getGbpReviews(locationId)` — last 10 reviews via v4 API.
 
@@ -146,7 +146,9 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 
 **Casa Edit location:** `locations/9343709211746831348`
 
-**GbpInsights fields:** `{ businessImpressions, mapImpressions, searchImpressions, callClicks, websiteClicks, directionRequests, postsLive, periodStart, periodEnd }`
+**GbpInsights fields (updated 2026-05-28):** `{ businessImpressions, mapImpressions, searchImpressions, callClicks, websiteClicks, directionRequests, postsLive, periodStart, periodEnd, searchKeywords }`
+
+**searchKeywords (added 2026-05-28):** `Array<{ keyword: string; impressions: number }> | null` — top 5 search queries that triggered impressions for this business, sorted by impression count. Fetched via `getGbpSearchKeywords()` (internal) using the GBP Performance API `searchkeywords/impressions/monthly` endpoint. Same OAuth credentials as `getDailyMetricsTimeSeries`. Below-threshold entries (Google suppresses counts < ~10-25) are filtered out. Returns null when the endpoint returns no above-threshold keywords. Used by analyst to ground impression counts in actual customer search behavior: "X people searched '[keyword]' and found you."
 
 ---
 
@@ -317,6 +319,13 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 
 **Commitment terms (added 2026-05-20):** `contractTerms` block included in analyst snapshot: `contractLengthMonths`, `contractType` (month-to-month/3-month/6-month), `contractEndDate`, `isInCommitment`, `daysRemainingInCommitment`. Analyst informs the model of contract status context without generating date calculations.
 
+**Localization enrichments (added 2026-05-28):**
+- **Review text + reviewer names:** GBP review samples now include `comment` (first 150 chars) and `reviewer` (when not Anonymous). Analyst instructed to quote actual customer language verbatim — "Sarah M. left a 5-star review saying '...'" — far more compelling than bare ratings. The `GbpReview.comment` field was already fetched by `getGbpReviews()`; it was being silently dropped from the analyst snapshot.
+- **GBP search keywords:** `gbp.searchKeywords` now passed to analyst from `GbpInsights.searchKeywords`. Analyst instructed to ground impression counts in actual search terms: "X people searched '[keyword]' and found you" instead of an abstract impression count.
+- **Estimate client names (V clients only):** `estimateSample` added to V-key vcitaSnapshot — filtered to sent/approved/viewed estimates with named client contacts, up to 3. Analyst instructed to use in lossAssets: "a $X quote to [client name] is sitting in your pipeline right now — that disappears Day 1." Only fires when the client has open named estimates; absent for Z clients and V clients with no active pipeline.
+- **competitiveBenchmark field (new):** Required output field — 1 sentence explicitly stating whether this client's key metric is above/at/below healthy for their vertical and tenure tier, using specific threshold from the context.ts benchmark table and actual client value. Flows to formatter → `agentBrief.verticalNote`. Transforms floating metrics into actionable competitive judgments the agent can say on the call.
+- **Competitive framing rewritten:** Prompt no longer asks the analyst to name specific competitors (no competitor data available — would force fabrication). Now requires relative market position framing: what happens to this client's Google standing when they go inactive while competitors in their category stay active.
+
 **JSON parsing:** Code fence stripping applied before extraction — `text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '')` — Sonnet 4.6 sometimes wraps output in ` ```json ``` ` fences despite explicit instructions. Prompt also says: "Return only the JSON object."
 
 ---
@@ -373,6 +382,8 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 
 **Section 3 behavioral constraint:** Financial options are LAST RESORT. The formatter prompt explicitly instructs that agents offering financial concessions too early is an existing behavior TSI is working to reduce. Tone must be reluctant and measured, not a deal offer.
 
+**Anti-generic quality gate (added 2026-05-28):** Formatter prompt now includes an explicit test: "Could you copy this sentence onto a different client's brief with no changes? If yes, it's too generic." S1 agentScript must contain (a) client business name or market, (b) at least one specific number, and (c) a specific TSI commitment — all three required. Formatter also instructed to use review quotes and estimate client names when the analyst has surfaced them. `verticalNote` in `agentBrief` now required to carry the analyst's `competitiveBenchmark` statement verbatim or paraphrased — actual metric vs. actual threshold, not vague assessment language.
+
 **Free month cap logic:** `buildSection3Guidelines(monthlyPrice)` — if `analyst.monthlyPrice > 500`, free month = $500 credit (not full month). If ≤ $500, full free month applies.
 
 **Commitment terms (added 2026-05-20):** `buildContractNote(commitmentTerms)` computes contract status in TypeScript (not LLM-generated, to avoid hallucination on date calculations). Returns null for month-to-month clients. Returns formatted string for 3- or 6-month contracts with: term label, end date, days remaining (if active) or completion date (if expired). Hardcoded as `contractNote` in `agentBrief` JSON output. `runFormatter` accepts `commitmentTerms: CommitmentTerms | null = null`.
@@ -409,52 +420,4 @@ Each section includes `agentScript` (phone) and `emailVersion` (follow-up email)
 
 **Vendor name rule (added 2026-05-26):** Never expose third-party vendor names. "BMP"/"Growth Management" not vcita. "Directories" not Yext. "Website" not Duda. GBP/Google Business Profile is fine.
 
-**Notable highlights (added 2026-05-26):** Haiku instructed to add 1-2 "Notable:" bullets from brief data if anything genuinely stands out (strong GBP metric, high review count, significant lead volume, major gap). Skip if nothing notable.
-
-**CRITICAL — batch run safety:** NEVER use `forceRefresh:true` in batch runs. It bypasses `noteAlreadyPostedForTicket` idempotency. If a call silently succeeds and appears to time out, retrying with `forceRefresh` posts a duplicate note. `forceRefresh` is debug-only for intentional single-ticket reruns.
-
-**Note structure:**
-1. Header — client name, tenure, at-risk value (dynamic), products line, TSI service gap flag
-2. Before you call — snapshot, `contractNote` (if not month-to-month), cancel read, lead-with, vertical context
-3. Section 1 — Opportunity: headline, commitments list, agent script
-4. Section 2 — Fear/Loss: headline, loss timeline, years-of-work statement, agent script
-5. Section 3 — Economics (LAST RESORT): opening condition, eligibility notes, opening script, 5-step escalation sequence (each step: label, manager flag, eligibility, script), top gaps footer
-6. Generation footer with date
-
-**`renderFinancialOption(opt, stepNumber)`:** TypeScript function. Renders a single `FinancialOption` as an `<li>` with step number, label, manager flag (⚠️ MANAGER REQUIRED or agent-approved), eligibility, and quoted script.
-
-**`buildSection3Block(brief, gapAudit, topGaps)`:** TypeScript function. Builds the entire Section 3 HTML block: opening condition, eligibility notes, agent script, escalation sequence list, top gaps footer, generation date. Never touches the model.
-
-**Haiku prompt note:** Receives only `agentBrief`, `section1`, `section2` data (not `section3`). `contractNote` hardcoded as a literal string in the prompt (no conditional model instruction). Ends with: "Do NOT add a closing `<hr>` — the system appends Section 3 after your output."
-
-**Freshdesk write timeout:** `AbortSignal.timeout(15000)` on the note POST call — fail fast, never stall the pipeline.
-
----
-
-## lib/retention/store.ts
-
-**Purpose:** MongoDB persistence. Writes full retention event (raw data + all agent outputs) for audit trail and dedup gate.
-
-**Exports:** `writeRetentionEvent`, `getRecentRetentionEvent` (dedup check within N days)
-
----
-
-## types/report.ts
-
-All TypeScript types for the report API response.
-
-**Key type:** `ReportData` — `{ meta, client, gbp, gbpReviews, duda, yext, vcita, activities, soci, errors }`
-
-**SOCI types (added 2026-05-20):** `SociPageMetrics`, `SociFbInsights`, `SociTopPost`, `SociSentiment`, `SociPeakHour`, `SociDemographics` — all exported from this file. `SociData` updated to include `fbNetworkId`, `pageMetrics`, `fbInsights`, `topPosts`, `sentiment`, `peakHours`, `demographics`, `reviewCounts`.
-
-**CommitmentTerms (added 2026-05-20):** `{ contractLengthMonths: number | null, contractStartDate: string | null, contractEndDate: string | null }` — sourced from Falcon `subscription.information.commitmentTerms`. Added to `FalconClient.subscription`.
-
-**FalconCancellationEvent (added 2026-05-21):** `{ event, date, cancelStatus, reason, pendingCancelDate }` — extracted from `CancellationLifecycleItem` in Falcon activities. Stored as `FalconClient.cancellationHistory: FalconCancellationEvent[]`.
-
----
-
-## types/retention.ts
-
-TypeScript types for the retention pipeline.
-
-**Key types:*
+**Notable highlights (added 2026-05-26):** Haiku instructed to add 1-2 "No

@@ -33,7 +33,8 @@ export interface AnalystOutput {
   cancellationRisk: string;   // analyst's read on why they might be canceling (inferred from data)
   cancelReasonAnchor: string | null; // if cancel reason was provided, how it should frame the entire pitch
   topRetentionHook: string;   // the single strongest argument to lead with
-  verticalContext: string;    // vertical/industry analysis — what matters most for this business type
+  verticalContext: string;    // vertical/industry analysis — what matters most for this business type, with benchmark comparison
+  competitiveBenchmark: string; // 1 sentence: explicit relative standing vs. healthy range for this vertical + tenure tier
   seasonalContext: string;    // seasonal intelligence — is this a seasonal dip or a real trend?
   opportunityActions: OpportunityAction[]; // 1-4 specific things TSI can do to improve performance (Section 1 feed)
   lossAssets: LossAsset[];    // what disappears at cancellation and when (Section 2 feed)
@@ -172,8 +173,4 @@ export interface GapAuditResult {
     // Social media performance — scored dimension (N/A if not subscribed)
     social: GapAuditDimension;
   };
-  // Ranked by severity — top items for the CSR to address
-  prioritizedGaps: PrioritizedGap[];
-  // The single most important gap or risk, in one sentence
-  topGap: string;
-}
+  // Ranked by severity —

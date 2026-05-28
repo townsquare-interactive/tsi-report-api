@@ -270,6 +270,15 @@ PRIORITY: Section 1 (Opportunity) is the most important output. The agentScript 
 
 Every section must feel bespoke. If you find yourself writing a generic sentence, stop and replace it with a specific one. The agent can tell when a script was generated from a template.
 
+ANTI-GENERIC QUALITY GATE — apply this test before returning:
+After writing each agentScript (S1, S2, S3) and each commitment description, ask: "Could I copy this exact sentence onto a brief for a different client in a different city with no changes?" If yes, it is too generic — rewrite it. A sentence with a real number AND either a real name, a specific market reference, or a specific TSI action is almost always specific enough. A sentence with no number and no name is never acceptable regardless of length.
+
+Specifically for Section 1 agentScript: it must include (a) the client's business name or market, (b) at least one specific number from the analyst data, and (c) a specific commitment TSI is making. All three. No exceptions.
+
+REVIEW TEXT AND ESTIMATE NAMES: If the analyst included review quotes or estimate client names, use them. "Sarah M. said '[quote]'" is more powerful than "your customers are satisfied." A named estimate — "a $4,200 quote to Johnson Exteriors" — is more powerful than "$4,200 in open pipeline." The specificity is the point.
+
+COMPETITIVE BENCHMARK: The analyst's competitiveBenchmark field contains a one-sentence relative standing statement. Use it verbatim or paraphrase into agentBrief.verticalNote. Never omit it — it is what transforms a metric from a floating number into a judgment the agent can actually say on the call.
+
 ---
 
 Client: ${clientName}
@@ -296,7 +305,7 @@ Produce the final retention brief as a JSON object with this EXACT structure:
     "contractNote": ${JSON.stringify(contractNote)},
     "cancelReasonRead": "1-2 sentences: what the analyst thinks is really going on — use the cancelReasonAnchor and cancellationRisk from the analysis. Be direct.",
     "leadWith": "the single strongest opening argument — what the agent says in the first 30 seconds. Should be the most compelling specific data point for this client.",
-    "verticalNote": "1-2 sentences: relevant vertical/seasonal/geographic context the agent should know. E.g. 'This is a seasonal business — canceling in peak season is the worst possible timing.'",
+    "verticalNote": "1-2 sentences: the analyst's competitiveBenchmark statement (relative standing vs. healthy range) plus any critical seasonal or geographic context. Must include the actual metric and threshold — e.g. 'At 18 months, healthy HVAC businesses show 2,000+ monthly impressions; this client is at 847 — low end of normal, with room to improve.' If competitiveBenchmark is absent, use verticalContext to write an equivalent statement.",
     "tsiServiceNote": ${JSON.stringify(tsiServiceNote)}
   },
   "section1": {
@@ -384,44 +393,4 @@ export async function runFormatter(
   analyst: AnalystOutput,
   clientName: string,
   gapAudit: GapAuditResult | null = null,
-  commitmentTerms: CommitmentTerms | null = null,
-  scheduledCancellation: ScheduledCancellation | null = null,
-  billingEvents: FalconBillingEvent[] = []
-): Promise<RetentionBrief> {
-  const apiKey = getAnthropicApiKey();
-  const contractNote = buildContractNote(commitmentTerms, scheduledCancellation);
-  const eligibility  = computeFinancialEligibility(billingEvents);
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 5000,
-      messages: [{ role: 'user', content: buildFormatterPrompt(analyst, gapAudit, clientName, contractNote, eligibility) }],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Formatter (Sonnet) error: ${response.status} ${response.statusText}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from formatter');
-
-  try {
-    // Strip markdown code fences if the model wrapped the output (defensive — should not happen)
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON in formatter response');
-    return JSON.parse(match[0]) as RetentionBrief;
-  } catch {
-    throw new Error(`Formatter returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+  commitmentTerms: CommitmentTerms | nu

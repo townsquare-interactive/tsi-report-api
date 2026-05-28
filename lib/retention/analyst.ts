@@ -72,6 +72,14 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
           upcomingBookings: vcita.upcomingBookings,
           conversations: vcita.conversations,
           invoiceSample: vcita.invoiceItems?.slice(0, 3),
+          // Named estimates — real client names on real open proposals. Use these in
+          // the loss narrative: "a $X quote to [name] disappears from your pipeline Day 1."
+          // Only present when the client has active estimates with named contacts.
+          estimateSample: vcita.estimateItems
+            ?.filter(e => e.client && (e.status === 'sent' || e.status === 'approved' || e.status === 'viewed'))
+            .slice(0, 3)
+            .map(e => ({ client: e.client, amount: e.amount, status: e.status, label: e.label }))
+            .filter(e => e.client) ?? [],
         }
       : {
           // Z (Lead Nurturing only) — payment/revenue fields deliberately excluded
@@ -150,12 +158,35 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     // IMPORTANT: null data with no corresponding error means the platform returned successfully but empty.
     // null data WITH an error means the fetch itself failed. Neither means the product is absent.
     dataErrors: Object.keys(data.errors ?? {}).length > 0 ? data.errors : null,
-    gbp: gbp ?? null,
+    gbp: gbp
+      ? {
+          businessImpressions: gbp.businessImpressions,
+          mapImpressions: gbp.mapImpressions,
+          searchImpressions: gbp.searchImpressions,
+          callClicks: gbp.callClicks,
+          websiteClicks: gbp.websiteClicks,
+          directionRequests: gbp.directionRequests,
+          postsLive: gbp.postsLive,
+          periodStart: gbp.periodStart,
+          periodEnd: gbp.periodEnd,
+          // Actual search terms customers used to find this business on Google.
+          // Use these to make the impression count concrete: "X people searched
+          // '[keyword]' and found you." Local-specific without competitor naming.
+          searchKeywords: gbp.searchKeywords ?? null,
+        }
+      : null,
     reviews: gbpReviews?.length
       ? {
           total: gbpReviews.length,
           averageRating: avgRating,
-          samples: gbpReviews.slice(0, 3).map(r => ({ rating: r.rating, hasReply: r.hasReply })),
+          // comment and reviewer are included so the analyst can quote actual customer language
+          // in the retention narrative — far more compelling than bare star counts.
+          samples: gbpReviews.slice(0, 3).map(r => ({
+            rating: r.rating,
+            hasReply: r.hasReply,
+            reviewer: r.reviewer !== 'Anonymous' ? r.reviewer : null,
+            comment: r.comment ? r.comment.slice(0, 150).trim() : null,
+          })),
         }
       : null,
     website: (hasWebsite || hasSEO) && duda
@@ -293,6 +324,18 @@ IMPORTANT — vcita leads include real client inquiries AND vendor spam (people 
 - USE: leads with a personal first/last name and a personal-looking email (gmail, outlook, yahoo, or a local business domain)
 Better to reference 1 real customer lead than 4 names where some are spam.
 
+**ESTIMATE CLIENT NAMES — HIGHEST-IMPACT SPECIFICITY (V-key clients only):**
+If estimateSample is present in the pipeline data, these are real proposals out to real named contacts. Use them directly in lossAssets. Format: "A $[amount] quote to [client name] is sitting in your pipeline right now — that disappears on Day 1 of cancellation." This is far more powerful than a dollar total alone. Never fabricate names or amounts; only use what is in estimateSample.
+
+**REVIEW TEXT — QUOTE THE CLIENT'S OWN CUSTOMERS:**
+If reviews.samples contains comment text and reviewer names, use actual review language in the narrative. A business owner recognizes their own customers' words immediately. Use format: "[Reviewer] left a 5-star review saying '[quote]' — that's the reputation you've built in [market]." Truncate naturally at a sentence boundary. Never paraphrase or fabricate; only quote verbatim from the comment field. Skip if comment is null.
+
+**SEARCH KEYWORDS — MAKE IMPRESSIONS LOCAL AND SPECIFIC:**
+If gbp.searchKeywords is present, translate the impression count using the actual search terms: "In the last [period], people searching '[top keyword]' and '[second keyword]' found your business on Google — that's real local demand for exactly what you do." This grounds the impression count in actual customer behavior instead of an abstract number. Use the top 1-2 keywords by impression count. Never invent keywords; only use what is in searchKeywords.
+
+**COMPETITIVE POSITION — RELATIVE STANDING, NOT COMPETITOR NAMES:**
+Do not attempt to name specific competitors. The brief has no data about actual competitor businesses. Instead, frame the competitive argument as relative market position: describe what happens to this client's standing when they go inactive versus the field of competitors in their category who stay active. Use the vertical benchmarks below to rate whether this client's metrics are above/at/below healthy for their vertical and tenure tier — then state that explicitly. "At 18 months, healthy [vertical] businesses in competitive markets typically have [X]. You're at [Y] — [above/at the low end of/below] that range." That is a statement with weight the agent can repeat on the call.
+
 **TICKET CONTEXT — CRITICAL:**
 The activities snapshot (openTickets, recentTickets) reflects only SERVICE tickets — Cancellation Request tickets have already been stripped out. However, when referencing open tickets as service gaps or work items:
 - NEVER tell the agent to "close the cancellation ticket" or "resolve the open cancellation request" — that is the very ticket that triggered this pipeline. It is not a service failure.
@@ -317,75 +360,4 @@ Return this JSON structure:
   "cancellationRisk": "your inferred read on why they're canceling — use data signals, payment status, ticket history, agent notes to infer the real reason",
   "cancelReasonAnchor": "if agentCancelNotes contains a reason, explain in 1-2 sentences how that reason should frame the ENTIRE pitch — what angle to lead with. null if no notes.",
   "topRetentionHook": "the single most compelling specific argument for this client — the thing an agent should say in the first 30 seconds",
-  "verticalContext": "2-3 sentences specific to THIS trade/vertical — not generic small business language. Name who their customers are and how they find new ones (Google search? referrals? Angi/HomeAdvisor? drive-by?). Name who they compete against locally (other independents? national franchise chains? aggregator platforms?). Explain specifically why digital search presence matters for THIS type of business more than, say, a flyer or a radio ad. A reader should not be able to swap this paragraph onto a different vertical without rewriting it.",
-  "seasonalContext": "2-3 sentences. REQUIRED: explicitly state HIGH/MODERATE/LOW seasonality for this vertical, then back it up with a specific reason. HIGH = name the exact demand driver (e.g. 'exterior painting season runs April–October because homeowners won't book during freeze risk'). LOW/MODERATE = say so plainly ('tattoo studios see flat demand year-round — there is no meaningful seasonal hook here'). Then state whether canceling in ${currentMonth} specifically is good or bad timing for this business, and why. NEVER claim peak season without a named specific driver. If this paragraph could apply to a different vertical, it is not acceptable — rewrite it.",
-  "opportunityActions": [
-    {
-      "title": "short label for this improvement",
-      "description": "specific thing TSI can do — actionable, not vague",
-      "expectedImpact": "what improvement should the client expect and roughly when"
-    }
-  ],
-  "lossAssets": [
-    {
-      "asset": "what they'd lose — be specific to their actual data (e.g. '847 Google impressions/month' not just 'Google presence')",
-      "disappearsBy": "Day 1 | Within 7 days | Within 30 days | Within 90 days",
-      "impact": "specific consequence for THIS business type in THIS market"
-    }
-  ],
-  "insights": [
-${insightsSpec}
-  ],
-  "pipelineAtRisk": ${pipelineAtRisk},
-  "tenureMonths": ${tenureMonths},
-  "monthlyPrice": ${client.price ?? 0},
-  "serviceKeys": ${JSON.stringify(serviceKeys)}
-}
-
-Rules:
-- opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in the actual data gaps.
-- lossAssets: 3–6 items, ordered by timing (Day 1 first). Use actual numbers from their data where possible.
-- insights: only for subscribed products (${insightSections.join(', ')}). Use real numbers. High urgency should be reserved for genuine gaps, not used on everything.
-- Return only the JSON object.`;
-}
-
-export async function runAnalyst(
-  data: FetchedData,
-  periodDays: number,
-  agentNotes = ''
-): Promise<AnalystOutput> {
-  const apiKey = getAnthropicApiKey();
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap — fail fast, don't hang the pipeline
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
-      messages: [{ role: 'user', content: buildAnalystPrompt(data, periodDays, agentNotes) }],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Analyst (Sonnet) error: ${response.status} ${response.statusText}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from analyst');
-
-  try {
-    // Strip markdown code fences if present, then extract { ... } block
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON object found in response');
-    return JSON.parse(match[0]) as AnalystOutput;
-  } catch {
-    throw new Error(`Analyst returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+  "verticalContext": "2-3 s

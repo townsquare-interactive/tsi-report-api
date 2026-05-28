@@ -211,14 +211,11 @@ Retention agents should follow this sequence. The brief is structured to support
 
 ---
 
-## Notes from Past Cases
+## Vertical Health Benchmarks
 
-*(Fill in as patterns emerge — e.g., "HVAC clients in southern markets spike cancellations in Feb/Mar — slow season")*
-`.trim();
+Use these reference thresholds when writing verticalContext and competitiveBenchmark. They represent
+what a healthy, actively managed TSI client looks like at each tenure tier for common verticals.
+These are internal TSI benchmarks based on the client portfolio — not industry-wide statistics.
 
-// Export a getter so callers can inject context length conditionally
-export function getRetentionContext(includeNotes = true): string {
-  if (includeNotes) return TSI_CONTEXT;
-  // Strip the Notes section for token-sensitive prompts
-  return TSI_CONTEXT.split('## Notes from Past Cases')[0].trim();
-}
+**How to use:** Look up the client's vertical category and tenure tier. Compare their actual metrics
+to the thresholds. State the comp
