@@ -66,9 +66,6 @@ export interface GbpInsights {
   postsLive: number;
   periodStart: string;
   periodEnd: string;
-  // Top search queries that triggered impressions for this business — fetched from
-  // the GBP Performance API searchkeywords/impressions/monthly endpoint. Null when
-  // the endpoint fails or returns no data above Google's minimum threshold.
   searchKeywords: Array<{ keyword: string; impressions: number }> | null;
 }
 
@@ -271,4 +268,17 @@ export interface SociData {
 
 export interface ReportData {
   meta: {
-    clientId: strin
+    clientId: string;
+    generatedAt: string;
+    periodDays: number;
+  };
+  client: FalconClient;
+  gbp: GbpInsights | null;
+  gbpReviews: GbpReview[];
+  duda: DudaSiteStats | null;
+  yext: YextListingsData | null;
+  vcita: VcitaData | null;
+  activities: ActivityData | null;
+  soci: SociData | null;
+  errors: Record<string, string>;
+}

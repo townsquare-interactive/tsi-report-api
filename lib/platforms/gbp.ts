@@ -62,46 +62,42 @@ async function getDailyMetric(
   );
 }
 
-// Fetches the top search queries that triggered impressions for this location.
-// Uses the GBP Performance API searchkeywords/impressions/monthly endpoint —
-// separate from getDailyMetricsTimeSeries, same OAuth credentials.
-// Returns top 5 by impression count. Returns [] on any failure — never throws.
-// Note: Google suppresses keywords below their minimum threshold (typically ~10-25
-// impressions); these are filtered out (threshold: true entries are dropped).
 async function getGbpSearchKeywords(
   locationId: string,
   periodDays: number,
   accessToken: string
 ): Promise<Array<{ keyword: string; impressions: number }>> {
-  const endDate = new Date();
-  const startDate = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
-
-  const params = new URLSearchParams({
-    'monthlyRange.start_month.year':  String(startDate.getFullYear()),
-    'monthlyRange.start_month.month': String(startDate.getMonth() + 1),
-    'monthlyRange.end_month.year':    String(endDate.getFullYear()),
-    'monthlyRange.end_month.month':   String(endDate.getMonth() + 1),
-  });
-
   try {
+    const endDate = new Date();
+    const startDate = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
+
+    // Build monthlyRange parameters covering the period
+    const params = new URLSearchParams({
+      'monthlyRange.start_month.year': String(startDate.getFullYear()),
+      'monthlyRange.start_month.month': String(startDate.getMonth() + 1),
+      'monthlyRange.end_month.year': String(endDate.getFullYear()),
+      'monthlyRange.end_month.month': String(endDate.getMonth() + 1),
+    });
+
     const res = await fetch(
       `${GBP_PERF_BASE}/${locationId}/searchkeywords/impressions/monthly?${params}`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
+
     if (!res.ok) return [];
 
     const data = await res.json() as {
       searchKeywordsCounts?: Array<{
         searchKeyword: string;
-        insightsValue: { value?: string; threshold?: boolean };
+        insightsValue?: { threshold?: boolean; value?: string };
       }>;
     };
 
     return (data.searchKeywordsCounts ?? [])
-      .filter((k) => !k.insightsValue.threshold)   // drop below-threshold entries
-      .map((k) => ({
+      .filter(k => !k.insightsValue?.threshold)
+      .map(k => ({
         keyword: k.searchKeyword,
-        impressions: parseInt(k.insightsValue.value ?? '0', 10),
+        impressions: parseInt(k.insightsValue?.value ?? '0', 10),
       }))
       .sort((a, b) => b.impressions - a.impressions)
       .slice(0, 5);
@@ -131,4 +127,64 @@ export async function getGbpInsights(
   const [metricValues, postsLive, searchKeywords] = await Promise.all([
     Promise.all(metrics.map((m) => getDailyMetric(locationId, m, startDate, endDate, accessToken))),
     getGbpPostsLive(locationId, accessToken),
- 
+    getGbpSearchKeywords(locationId, periodDays, accessToken),
+  ]);
+
+  const [deskMaps, mobMaps, deskSearch, mobSearch, calls, websites, directions] = metricValues;
+
+  return {
+    businessImpressions: deskMaps + mobMaps + deskSearch + mobSearch,
+    mapImpressions: deskMaps + mobMaps,
+    searchImpressions: deskSearch + mobSearch,
+    callClicks: calls,
+    websiteClicks: websites,
+    directionRequests: directions,
+    postsLive,
+    periodStart: startDate.toISOString(),
+    periodEnd: endDate.toISOString(),
+    searchKeywords: searchKeywords.length > 0 ? searchKeywords : null,
+  };
+}
+
+export async function getGbpPostsLive(locationId: string, accessToken?: string): Promise<number> {
+  const token = accessToken ?? await getAccessToken();
+  const res = await fetch(
+    `${GBP_MY_BUSINESS}/accounts/me/${locationId}/localPosts?pageSize=20`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) return 0;
+  const data = await res.json() as { localPosts?: Array<{ state?: string }> };
+  return (data.localPosts ?? []).filter((p) => p.state === 'LIVE').length;
+}
+
+export async function getGbpReviews(locationId: string): Promise<GbpReview[]> {
+  const accessToken = await getAccessToken();
+
+  // locationId format: "locations/123..." — derive account path for v4 API
+  const res = await fetch(
+    `${GBP_MY_BUSINESS}/accounts/me/${locationId}/reviews?pageSize=10`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!res.ok) return [];
+
+  const data = await res.json() as {
+    reviews?: Array<{
+      reviewId: string;
+      starRating: string;
+      comment?: string;
+      reviewer?: { displayName?: string };
+      createTime: string;
+      reviewReply?: { comment: string };
+    }>;
+  };
+
+  return (data.reviews ?? []).map((r) => ({
+    reviewId: r.reviewId,
+    rating: r.starRating,
+    comment: r.comment ?? null,
+    reviewer: r.reviewer?.displayName ?? 'Anonymous',
+    createTime: r.createTime,
+    hasReply: !!r.reviewReply,
+  }));
+}

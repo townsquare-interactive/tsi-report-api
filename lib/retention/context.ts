@@ -218,4 +218,115 @@ what a healthy, actively managed TSI client looks like at each tenure tier for c
 These are internal TSI benchmarks based on the client portfolio — not industry-wide statistics.
 
 **How to use:** Look up the client's vertical category and tenure tier. Compare their actual metrics
-to the thresholds. State the comp
+to the thresholds. State the comparison explicitly in verticalContext and competitiveBenchmark: "At [X] months,
+healthy [vertical] businesses typically have [Y]. This client is at [Z] — [above/at/below] that range."
+
+**Tenure tiers:**
+- **Onboarding:** 0–6 months (still ramping, lower benchmarks apply)
+- **Growth:** 6–24 months (full ramp, approaching steady state)
+- **Mature:** 24+ months (established, should be at or above benchmarks)
+
+### HVAC (Heating, Ventilation, Air Conditioning)
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 600–1,200 | 1,200–2,500 | 2,000–4,000 |
+| Call clicks/mo | 20–50 | 50–120 | 100–200 |
+| Direction requests/mo | 10–30 | 30–80 | 60–150 |
+| Reviews total | 5–15 | 15–40 | 35+ |
+| Avg rating | 4.0+ | 4.2+ | 4.3+ |
+
+### Exterior Contractors (Painting, Roofing, Concrete, Siding)
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 500–1,000 | 1,000–2,000 | 1,800–3,500 |
+| Call clicks/mo | 15–40 | 40–100 | 80–180 |
+| Direction requests/mo | 8–25 | 25–70 | 50–120 |
+| Reviews total | 5–12 | 12–30 | 28+ |
+| Avg rating | 4.0+ | 4.2+ | 4.4+ |
+
+### Landscaping and Lawn Care
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 400–900 | 900–1,800 | 1,600–3,000 |
+| Call clicks/mo | 12–35 | 35–90 | 70–150 |
+| Direction requests/mo | 8–20 | 20–60 | 45–100 |
+| Reviews total | 4–10 | 10–25 | 22+ |
+| Avg rating | 4.0+ | 4.2+ | 4.3+ |
+
+### Plumbing and Electrical
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 700–1,400 | 1,400–2,800 | 2,400–4,500 |
+| Call clicks/mo | 25–60 | 60–140 | 120–240 |
+| Direction requests/mo | 12–35 | 35–90 | 70–160 |
+| Reviews total | 6–18 | 18–45 | 40+ |
+| Avg rating | 4.1+ | 4.3+ | 4.4+ |
+
+### Restaurants and Food Service
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 1,000–2,500 | 2,500–5,000 | 4,500–9,000 |
+| Call clicks/mo | 30–80 | 80–200 | 160–350 |
+| Direction requests/mo | 40–100 | 100–250 | 200–450 |
+| Reviews total | 10–30 | 30–80 | 70+ |
+| Avg rating | 3.9+ | 4.0+ | 4.2+ |
+
+### Auto Services (Repair, Detailing, Tires)
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 600–1,300 | 1,300–2,600 | 2,200–4,200 |
+| Call clicks/mo | 20–55 | 55–130 | 110–220 |
+| Direction requests/mo | 15–40 | 40–100 | 80–170 |
+| Reviews total | 8–20 | 20–50 | 45+ |
+| Avg rating | 4.0+ | 4.2+ | 4.3+ |
+
+### Personal Services (Salons, Spas, Tattoo, Fitness)
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 400–800 | 800–1,600 | 1,400–2,800 |
+| Call clicks/mo | 10–30 | 30–75 | 60–130 |
+| Direction requests/mo | 10–30 | 30–80 | 65–140 |
+| Reviews total | 5–15 | 15–40 | 35+ |
+| Avg rating | 4.1+ | 4.3+ | 4.4+ |
+
+### Professional Services (Attorneys, Accountants, Insurance, Real Estate)
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 300–700 | 700–1,400 | 1,200–2,500 |
+| Call clicks/mo | 8–25 | 25–65 | 55–120 |
+| Direction requests/mo | 5–15 | 15–40 | 35–80 |
+| Reviews total | 4–12 | 12–30 | 25+ |
+| Avg rating | 4.2+ | 4.3+ | 4.5+ |
+
+### Home Services (General Contractors, Remodeling, Cleaning)
+
+| Metric | Onboarding (0–6 mo) | Growth (6–24 mo) | Mature (24+ mo) |
+|--------|--------------------|--------------------|-----------------|
+| GBP impressions/mo | 450–950 | 950–1,900 | 1,700–3,200 |
+| Call clicks/mo | 14–38 | 38–95 | 75–160 |
+| Direction requests/mo | 8–22 | 22–65 | 50–110 |
+| Reviews total | 5–14 | 14–35 | 30+ |
+| Avg rating | 4.0+ | 4.2+ | 4.3+ |
+
+
+---
+
+## Notes from Past Cases
+
+*(Fill in as patterns emerge — e.g., "HVAC clients in southern markets spike cancellations in Feb/Mar — slow season")*
+`.trim();
+
+// Export a getter so callers can inject context length conditionally
+export function getRetentionContext(includeNotes = true): string {
+  if (includeNotes) return TSI_CONTEXT;
+  // Strip the Notes section for token-sensitive prompts
+  return TSI_CONTEXT.split('## Notes from Past Cases')[0].trim();
+}
