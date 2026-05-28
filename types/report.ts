@@ -250,35 +250,36 @@ export interface SociFbInsights {
 }
 
 export interface SociTopPost {
-export interface SociTopPost {
   id: string;
   message: string;
   impressions: number;
-  engagements: number;
-  createdTime: string;
+  impressionsOrganic: number;
+  impressionsViral: number;
+  engagedUsers: number;
+  postClicks: number;
+  scheduledTime: string;
 }
 
 export interface SociSentiment {
+  positive: number;
+  neutral: number;
+  negative: number;
   avgSentiment: number;
-  positivePct: number;
-  negativePct: number;
-  neutralPct: number;
-  totalReviews: number;
 }
 
 export interface SociPeakHour {
-  dayOfWeek: number;
   hour: number;
-  engagementScore: number;
+  value: number;
 }
 
 export interface SociDemographics {
-  ageGender: Record<string, number>;
-  countries: Record<string, number>;
-  cities: Record<string, number>;
+  women: { total: number; byAge: Record<string, number> };
+  men:   { total: number; byAge: Record<string, number> };
 }
 
 export interface SociData {
+  projectId: string;
+  fbNetworkId: string | null;
   upcomingPostCount: number;
   recentlySentCount: number;
   scheduledNetworks: string[];
