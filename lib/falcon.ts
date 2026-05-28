@@ -3,7 +3,7 @@
 // Endpoint: https://falcon.tsi.tools/api/graphql
 // Auth: x-api-key header
 
-import type { FalconClient, ActivityData, FalconBillingEvent, FalconCancellationEvent } from '@/types/report';
+import type { FalconClient, ActivityData, FalconBillingEvent, FalconCancellationEvent, ClientServicingInfo, ContentGenActivity } from '@/types/report';
 import { getFalconCredentials } from './secrets';
 
 // Fetch up to 100 most recent activities — filtered by date in-process since
@@ -45,6 +45,33 @@ const CLIENT_QUERY = `
           }
         }
       }
+      clientServicingInformation {
+        information {
+          lastAttemptedContact
+          responded
+          lastValueProvided
+          teamDivision { code label }
+          serviceTeam {
+            members {
+              name
+              email
+              role { code label }
+            }
+          }
+        }
+      }
+      contentGenActivity {
+        lastCompletedAt
+        lastPageType
+      }
+      retention {
+        latestSaveEvent {
+          savedAt
+        }
+      }
+      billing {
+        paymentStatus
+      }
       activities(limit: 100) {
         __typename
         ... on Ticket {
@@ -84,6 +111,24 @@ interface RawExternalService {
   id: string;
   name: string;
   provider: string | null;
+}
+
+interface RawTeamMember {
+  name: string;
+  email: string | null;
+  role: { code: string; label: string } | null;
+}
+
+interface RawServicingInformation {
+  lastAttemptedContact: string | null;
+  responded: string | null;
+  lastValueProvided: string | null;
+  teamDivision: { code: string; label: string } | null;
+  serviceTeam: { members: RawTeamMember[] } | null;
+}
+
+interface RawClientServicingInformation {
+  information: RawServicingInformation | null;
 }
 
 interface RawTicket {
@@ -131,6 +176,10 @@ interface RawFalconClient {
   tsiMarket: string;
   externalServiceIds: RawExternalService[];
   activities: RawActivity[];
+  clientServicingInformation: RawClientServicingInformation | null;
+  contentGenActivity: { lastCompletedAt: string | null; lastPageType: string | null } | null;
+  retention: { latestSaveEvent: { savedAt: string | null } | null } | null;
+  billing: { paymentStatus: string | null } | null;
   subscription: {
     id: string;
     information: {
@@ -273,43 +322,4 @@ export async function getClientById(
 
   // Extract cancellation lifecycle history — all events, not period-filtered
   const cancellationHistory: FalconCancellationEvent[] = (raw.activities ?? [])
-    .filter((a): a is RawCancellationLifecycleItem => a.__typename === 'CancellationLifecycleItem')
-    .map((c) => ({
-      event: c.event,
-      date: c.date,
-      cancelStatus: c.cancelStatus,
-      reason: c.reason,
-      pendingCancelDate: c.pendingCancelDate,
-    }));
-
-  const client: FalconClient = {
-    id: raw.id,
-    name: raw.name,
-    status: raw.status,
-    tsiMarket: raw.tsiMarket,
-    price: raw.subscription?.information?.cost ?? null,
-    gpPaymentStatus: null,
-    gpid: extMap.get('finance') ?? null,
-    freshdeskId: extMap.get('ticketing') ?? null,
-    vcitaId: vcitaEntry?.name ?? null,
-    billingEvents,
-    cancellationHistory,
-    subscription: raw.subscription?.information
-      ? {
-          id: raw.subscription.id,
-          startDate: raw.subscription.information.startDate,
-          endDate: raw.subscription.information.endDate ?? null,
-          launchDate: raw.subscription.information.launchDate,
-          status: raw.subscription.information.status,
-          cost: raw.subscription.information.cost,
-          serviceKeys: raw.subscription.information.serviceKeys ?? [],
-          commitmentTerms: raw.subscription.information.commitmentTerms ?? null,
-          scheduledCancellation: raw.subscription.information.scheduledCancellation ?? null,
-        }
-      : null,
-  };
-
-  const activities = buildActivityData(raw.activities ?? [], periodDays);
-
-  return { client, activities };
-}
+    .filter((a): a is RawCancellationLifecycleItem => a.__typename === 'CancellationLifecycleItem

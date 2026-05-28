@@ -282,6 +282,7 @@ async function handleRetention(request: NextRequest) {
       gapAudit,
       errors: agentErrors,
       pipelineAtRisk: analystOutput?.pipelineAtRisk ?? 0,
+      competitors: retentionBrief?.competitors ?? [],
     };
     mongoId = await writeRetentionEvent(doc);
   } catch (err) {
@@ -320,7 +321,4 @@ async function handleRetention(request: NextRequest) {
       gapAudit,
       errors: Object.keys(agentErrors).length > 0 ? agentErrors : undefined,
     },
-    { headers: { 'Cache-Control': 'no-store', 'Content-Type': 'application/json' } }
-  );
-}
-
+    { headers: { 'Cache-Control': 'no-s

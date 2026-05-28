@@ -234,7 +234,8 @@ function buildFormatterPrompt(
   gapAudit: GapAuditResult | null,
   clientName: string,
   contractNote: string | null,
-  eligibility: ReturnType<typeof computeFinancialEligibility>
+  eligibility: ReturnType<typeof computeFinancialEligibility>,
+  pipelineAtRiskOverride: number
 ): string {
   const tsiServiceNote = gapAudit?.tsiServiceGap
     ? `TSI SERVICE ALERT: ${gapAudit.dimensions.service?.narrative ?? 'TSI service gaps exist — review before calling.'}`
@@ -260,6 +261,10 @@ Section 3 — financial offers are still last resort, but frame them as "here's 
 
 BREVITY REQUIREMENT: Scripts and descriptions must be SHORT. An agent is on a live call with one eye on their notes. Every field should be scannable in 5 seconds. Agent scripts: 2 sentences max. Commitments: 1 sentence each. Loss timeline items: 1 sentence each. emailVersion: 3 sentences max. This is a reference card, not a narrative.
 
+PIPELINE AT RISK — DISPLAY RULE: If pipelineAtRisk is between $0 and $49, do NOT display it as "$1" or any suspiciously low figure. Instead, frame the pipeline argument as the client's annual value to their own business: monthly price × 12 = annual subscription value they're trading away. Example: "At $X/month, you're walking away from $Y/year in digital marketing investment."
+
+S2 SPEAKING CONSTRAINT — CRITICAL: Every sentence in agentScript (Section 2) must be speakable in a single breath. No sentence should contain more than 15 words. No compound clauses strung together with "and" or "while" or "as." The agent is reading off a screen on a live call. If a sentence has more than one comma, it's too long — break it into two. Test every sentence: can you say it naturally without stopping? If not, rewrite it.
+
 PRODUCT NAMING — CRITICAL: TSI never exposes vendor names to clients or agents. In ALL output use only TSI product names: "BMP" or "Growth Management" (not vcita), "Directories" (not Yext), "Website" (not Duda). GBP / Google Business Profile is fine as-is.
 ${contractModeInstruction}
 DEMYSTIFY METRICS: When referencing numbers, always include the plain-English impact. "247 direction requests (247 people tried to navigate to their door)" not just "247 direction requests." The agent needs to be able to say the number and immediately explain what it means.
@@ -274,7 +279,7 @@ Every section must feel bespoke. If you find yourself writing a generic sentence
 
 Client: ${clientName}
 Tenure: ${analyst.tenureMonths} months
-Pipeline at risk: $${analyst.pipelineAtRisk.toLocaleString()}
+Pipeline at risk: $${pipelineAtRiskOverride.toLocaleString()}
 TSI Service Note: ${tsiServiceNote ?? 'None — service quality is healthy'}
 
 Analyst findings:
@@ -368,9 +373,12 @@ Produce the final retention brief as a JSON object with this EXACT structure:
     "agentScript": "MAXIMUM 2 SENTENCES. How the agent opens Section 3 — reluctant, final. Acknowledges S1 and S2 are done. Does NOT quote percentages or prices.",
     "emailVersion": "Follow-up email if no answer. MUST open with S1/S2 value recap — what's been built, what would be lost. Financial options in paragraph 2 only, framed as: 'If budget is truly the only barrier after weighing everything above, I want to be transparent about what options are available.' Financial options are a footnote, not the subject."
   },
-  "pipelineAtRisk": ${analyst.pipelineAtRisk},
-  "tenureMonths": ${analyst.tenureMonths}
+  "pipelineAtRisk": ${pipelineAtRiskOverride},
+  "tenureMonths": ${analyst.tenureMonths},
+  "competitors": []
 }
+
+COMPETITORS FIELD — extract any named competitors from the analyst findings, cancelReasonAnchor, or agentCancelNotes. Use actual business or brand names only (e.g., ["Hibu", "Scorpion", "Thryv", "Yelp"]). If no competitor is named, return an empty array. Never include generic terms like "competitor" or "other company." These are stored for competitive intelligence.
 
 Rules:
 - Agent scripts should sound like a real human on the phone, not a marketing deck. Contractions are fine. Specificity is required.
@@ -403,37 +411,5 @@ export async function runFormatter(
   const contractNote = buildContractNote(commitmentTerms, scheduledCancellation);
   const eligibility  = computeFinancialEligibility(billingEvents);
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 5000,
-      messages: [{ role: 'user', content: buildFormatterPrompt(analyst, gapAudit, clientName, contractNote, eligibility) }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    throw new Error(`Formatter (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from formatter');
-
-  try {
-    // Strip markdown code fences if the model wrapped the output (defensive — should not happen)
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON in formatter response');
-    return JSON.parse(match[0]) as RetentionBrief;
-  } catch {
-    throw new Error(`Formatter returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+  // Fix $1 pipeline artifact: when pipelineAtRisk is suspiciously low (< $50),
+  // fall back to annual subscription value so the formatter has a meaningf

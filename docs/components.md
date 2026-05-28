@@ -42,12 +42,13 @@
 
 **Dedup gate:** Returns cached brief if one exists within last 7 days. Bypass with `forceRefresh=true`.
 
+**Parallel fetch (updated 2026-05-28):** `fetchClientData` (Agent 1) and `getTicketConversations` now run concurrently via `Promise.allSettled`. Previous sequencing added ~1–2s per run. Fetcher failure is fatal (502); conversation fetch is non-blocking (returns null on error, never fails the pipeline).
+
 **Pipeline:**
-1. Agent 1 — Fetcher (no model): GPID → all platform data via `fetchClientData`
-2. Freshdesk conversation fetch: first 5 conversation entries from cancel ticket (non-blocking)
-3. Agents 2 + 4 (parallel): Analyst (Sonnet) + Gap Auditor (Sonnet)
-4. Agent 3 — Formatter (Sonnet): structures three-section CSR brief
-5. Agent 5 — Note Writer (Haiku): posts internal note to Freshdesk ticket
+1. Agent 1 — Fetcher (no model) + Freshdesk conversations: run in parallel via `Promise.allSettled`
+2. Agents 2 + 4 (parallel): Analyst (Sonnet) + Gap Auditor (Sonnet)
+3. Agent 3 — Formatter (Sonnet): structures three-section CSR brief
+4. Agent 5 — Note Writer (Haiku): posts internal note to Freshdesk ticket
 6. MongoDB write: persists full event
 
 **Freshdesk write gate:** `FRESHDESK_WRITE_ENABLED=true` env var required. Currently `false` — do NOT enable until production go-live is confirmed by Brett.
@@ -142,6 +143,8 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 - `getGbpPostsLive(locationId, accessToken?)` — counts LIVE posts via GBP v4 API.
 - `getGbpReviews(locationId)` — last 10 reviews via v4 API.
 
+**Timeouts (added 2026-05-28):** All fetch calls carry `AbortSignal.timeout()` — 8s on OAuth token refresh, 10s on all GBP API calls. Prevents a slow Google endpoint from hanging the Vercel function indefinitely.
+
 **Auth:** OAuth2 refresh token flow using `tsi/mcp/gbp` secret.
 
 **Casa Edit location:** `locations/9343709211746831348`
@@ -157,6 +160,8 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 **Purpose:** Yext listings sync status + analytics.
 
 **Export:** `getYextData(gpid, periodDays?)` — GPID → Yext accountId by removing spaces (e.g. `TI CASAED001` → `TICASAED001`)
+
+**Timeouts (added 2026-05-28):** All fetch calls carry `AbortSignal.timeout(10_000)`.
 
 **API:** `api.yextapis.com` (NOT `api.yext.com`) · version `20230301`
 
@@ -181,6 +186,8 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 **Export:** `getDudaData(siteName, periodDays)` — takes Duda's internal `site_name` identifier directly.
 
 **Fetches (parallel):** site details, analytics, blog posts, pages list, activity log (last 50).
+
+**Timeouts (added 2026-05-28):** Shared `opts = { signal: AbortSignal.timeout(10_000), headers }` applied to all 5 parallel fetches.
 
 **API:** Base URL `https://api.duda.co`. Auth: Basic using `tsi/mcp/duda` secret.
 
@@ -208,6 +215,8 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 **Auth:**
 - Directory token from `tsi/mcp/vcita` AWS secret
 - `x-on-behalf-of: {vcita hex business UID}` header required for all business-scoped endpoints
+
+**Timeouts (added 2026-05-28):** `vcitaGet` helper carries `AbortSignal.timeout(10_000)`. 403 responses treated as empty (feature not enabled), not errors.
 
 **No MCP proxy needed.** `developers.intandem.tech/mcp` returns 403 from non-Desktop IPs — not viable for Lambda.
 
@@ -326,6 +335,10 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 - **competitiveBenchmark field (new):** Required output field — 1 sentence explicitly stating whether this client's key metric is above/at/below healthy for their vertical and tenure tier, using specific threshold from the context.ts benchmark table and actual client value. Flows to formatter → `agentBrief.verticalNote`. Transforms floating metrics into actionable competitive judgments the agent can say on the call.
 - **Competitive framing rewritten:** Prompt no longer asks the analyst to name specific competitors (no competitor data available — would force fabrication). Now requires relative market position framing: what happens to this client's Google standing when they go inactive while competitors in their category stay active.
 
+**leadNames filter fix (2026-05-28):** `l.name?.trim() && l.name !== 'Unnamed client'` — added `trim()` guard to prevent whitespace-only strings from passing the filter.
+
+**Error body capture (added 2026-05-28):** See gap-auditor.ts note above.
+
 **JSON parsing:** Code fence stripping applied before extraction — `text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '')` — Sonnet 4.6 sometimes wraps output in ` ```json ``` ` fences despite explicit instructions. Prompt also says: "Return only the JSON object."
 
 ---
@@ -337,6 +350,8 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 **10 dimensions (expanded 2026-05-21):** `gbp`, `website`, `listings`, `reputation`, `pipeline`, `service`, `financial`, `structural`, `cancellation_history`, `social`
 
 **Ticket blocklist in local filter (updated 2026-05-28):** The gap auditor builds `openTicketDetails` from `activities.recentTickets` with a local filter. Previously this only excluded Cancellation Request tickets (`/cancellation/i`). Now mirrors the full blocklist from `lib/falcon.ts`: also excludes Accounts Receivable (`/accounts?\s*receivable/i`) and Account Resolution (`/account\s*resolution/i`) tickets. The `hasBlockedTickets` flag also applies the full filter. Without this, billing workflow tickets (Account Resolution, AR) were appearing in `openTicketDetails`, the model correctly reported them as blocked tickets, and they surfaced in brief headers as TSI service failures — which is wrong. Prompt instruction also updated to explicitly tell the model to ignore these types.
+
+**Error body capture (added 2026-05-28):** Anthropic API errors now capture response body: `const errBody = await response.text().catch(() => ''); throw new Error(\`... ${errBody.slice(0, 200)}\`)`. Applied to gap-auditor, analyst, formatter, and note-writer. Previously errors were `"Sonnet error: 529 "` with no context on what the API actually said.
 
 **New dimensions (added 2026-05-21):**
 - **financial** — contract type (M2M vs contract), commitment status, discount history (12-month and all-time), concession eligibility. Score reflects churn risk and Economics section availability, not revenue.
@@ -405,19 +420,4 @@ Each section includes `agentScript` (phone) and `emailVersion` (follow-up email)
 - **TypeScript** renders Section 3 entirely via `renderFinancialOption()` and `buildSection3Block()` — structured `escalationSequence` array must never be delegated to model interpretation. Haiku was truncating or skipping the expansion of typed arrays in earlier builds.
 - The two outputs are concatenated: `narrativeHtml + '\n' + section3Html`
 
-**HTML code fence stripping (added 2026-05-28):** Haiku intermittently wraps its HTML output in ` ```html ``` ` fences despite explicit prompt instructions — identical to the JSON fence issue on Sonnet agents. Raw Haiku output is now stripped before concatenation with Section 3: `.replace(/^```(?:html)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()`. Without this, fences rendered literally in Freshdesk notes.
-
-**Gated:** Only fires when `FRESHDESK_WRITE_ENABLED=true`. Currently `false` (env var ID `o0Sl8OowmtlNMh2f`).
-
-**Signature (updated 2026-05-26):** `writeRetentionNote(ticketId, brief, gapAudit, clientName, agentNotes, serviceKeys: string[] = [], monthlyPrice: number | null = null)`
-
-**Header (updated 2026-05-26):**
-- Client name, tenure, at-risk value (pipeline $ if > 0, else `~Annual value: ~$X/yr`, never "$0")
-- Products line — TypeScript-rendered from `serviceKeys` via `SERVICE_KEY_LABELS` map, never vendor names
-- TSI service gap flag if present
-
-**SERVICE_KEY_LABELS:** W→Website, O→SEO, Y→Directories, T→Targeting Ads, S→Social, E→E-Commerce, F→Facebook Ads, V→BMP, Z→Lead Nurturing, C→Call Trace, P→Call Trace Pro
-
-**Vendor name rule (added 2026-05-26):** Never expose third-party vendor names. "BMP"/"Growth Management" not vcita. "Directories" not Yext. "Website" not Duda. GBP/Google Business Profile is fine.
-
-**Notable highlights (added 2026-05-26):** Haiku instructed to add 1-2 "No
+**HTML code fe

@@ -3,7 +3,7 @@
 // Partner API does NOT support domain-based lookup — always use site_name
 // Find site_name via Duda MCP get_site_details or admin dashboard URL /home/site/{site_name}
 
-import type { DudaSiteStats } from '@/types/report';
+import type { DudaSiteStats, DudaPage } from '@/types/report';
 import { getDudaCredentials } from '../secrets';
 
 interface DudaSiteDetails {
@@ -122,17 +122,9 @@ export async function getDudaData(
       date: p.publish_date ? p.publish_date.split('T')[0] : 'Active',
     }));
 
-  return {
-    siteAlias: site?.site_domain ?? siteName,
-    lastPublished: site?.last_published_date ?? null,
-    pageViews: stats.PAGE_VIEWS ?? 0,
-    uniqueVisitors: stats.VISITORS ?? 0,
-    visits: stats.VISITS ?? 0,
-    periodStart: from,
-    periodEnd: to,
-    totalPages: pages.length,
-    publishedPosts,
-    siteUpdates,
-  };
-}
-
+  // Build page inventory with title and path for analyst classification
+  // (service pages, geo pages, FAQ pages, blog posts — analyst classifies from these)
+  const pageInventory: DudaPage[] = pages.map(p => ({
+    title: p.title ?? '',
+    path: p.path ?? p.page_url?.replace(/^https?:\/\/[^/]+/, '') ?? '',
+  })).filter(p

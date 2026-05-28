@@ -115,6 +115,9 @@ export interface RetentionBrief {
   // Pass-through metadata
   pipelineAtRisk: number;
   tenureMonths: number;
+  // Named competitors extracted from cancel reason / ticket content
+  // Stored in MongoDB for future competitive intelligence aggregation
+  competitors?: string[];
 }
 
 // ── Agent 4: Gap Auditor output ───────────────────────────────────────────────
@@ -173,8 +176,4 @@ export interface GapAuditResult {
     // Social media performance — scored dimension (N/A if not subscribed)
     social: GapAuditDimension;
   };
-  // Ranked by severity — top items for the CSR to address
-  prioritizedGaps: PrioritizedGap[];
-  // The single most important gap or risk, in one sentence
-  topGap: string;
-}
+  // Ranked 

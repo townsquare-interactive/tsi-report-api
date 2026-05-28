@@ -44,8 +44,22 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
     ? Math.round((repliedCount / gbpReviews.length) * 100)
     : null;
 
-  // Days since the most recent ticket was touched — proxy for last TSI touchpoint
-  const daysSinceLastTouchpoint = (() => {
+  // LAC (lastAttemptedContact) = every call attempt including voicemails
+  // LCR (responded) = date client actually talked to TSI (answered and held a conversation)
+  // Use these instead of ticket updatedAt — which was a broken proxy for contact dates
+  const servicing = client.servicing ?? null;
+  const lacDate = servicing?.lastAttemptedContact ?? null;
+  const lcrDate = servicing?.responded ?? null;
+  const daysSinceLAC = lacDate
+    ? Math.floor((Date.now() - new Date(lacDate).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const daysSinceLCR = lcrDate
+    ? Math.floor((Date.now() - new Date(lcrDate).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  // Days since the most recent ticket was updated — kept as secondary signal only
+  // Do NOT use this as "last contact" — it reflects ticket activity, not actual calls
+  const daysSinceLastTicketUpdate = (() => {
     if (!activities?.recentTickets?.length) return null;
     const mostRecent = activities.recentTickets
       .map(t => new Date(t.updatedAt).getTime())
@@ -270,10 +284,28 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
       totalTicketsInPeriod: activities?.totalThisPeriod ?? 0,
       openTickets: activities?.openTickets ?? 0,
       resolvedThisPeriod: activities?.resolvedThisPeriod ?? 0,
-      daysSinceLastTouchpoint,
+      // LAC/LCR — authoritative contact dates from Falcon clientServicingInformation
+      // LAC = last call attempt (including voicemails, missed calls)
+      // LCR = last actual conversation (client answered and engaged)
+      // Use these for contact story, not ticket updatedAt
+      lastAttemptedContact: lacDate,
+      daysSinceLAC,
+      lastClientResponse: lcrDate,
+      daysSinceLCR,
+      // teamDivision identifies the service model — CSL is the pooled service rep
+      teamDivision: servicing?.teamDivision ?? null,
+      serviceTeam: servicing?.serviceTeam ?? [],
+      // daysSinceLastTicketUpdate is kept as secondary signal only (NOT as contact date)
+      daysSinceLastTicketUpdate,
       hasBlockedTickets,
+      // openTicketDetails includes ticket subject — use subject text for gap reasoning
+      // not just ticket type. "AE Request" type may be a routing artifact (radio market referral)
+      // rather than a service failure — read the subject to determine actual context.
       openTicketDetails,
     },
+    // contentGenActivity — Client Hub automation (Geo/FAQ/Blog only, not full site picture)
+    // null means no automation has run recently, NOT that the site has no content
+    contentGenActivity: client.contentGenActivity ?? null,
   }, null, 2);
 
   return `You are a senior client success analyst at Townsquare Interactive (TSI). Your job is to produce a comprehensive account health index for this client — every platform we manage scored against what a healthy TSI account at their tenure tier should look like, plus an honest evaluation of TSI's own service quality, financial health signals, structural setup quality, and cancellation history.
@@ -399,9 +431,26 @@ Inactive social (0 upcoming posts, no sent this period) = product abandoned. Act
 | Metric | Any tier |
 |---|---|
 | Outbound calls in period | 2+ per 90 days (minimum touch cadence) |
-| Days since last touchpoint | <30 days for mature/veteran; <45 for growth |
+| Days since LAC (lastAttemptedContact) | <30 days for mature/veteran; <45 for growth |
+| Days since LCR (lastClientResponse) | This measures client engagement, not TSI effort — a high number means TSI has been calling but the client is not responding, which is different from TSI not calling at all. Distinguish these two situations clearly in the narrative. |
 | Open tickets | 0 is ideal; 1 is acceptable; 2+ needs explanation |
 | Blocked tickets | Any BLOCKED non-cancellation ticket = TSI service failure |
+
+CONTACT STORY — CRITICAL FRAMING:
+- Use LAC (lastAttemptedContact / daysSinceLAC) to measure how recently TSI attempted contact
+- Use LCR (lastClientResponse / daysSinceLCR) to measure when the client last actually talked to TSI
+- If daysSinceLAC is low but daysSinceLCR is high: TSI has been calling, but the client has not responded. This is CLIENT AVOIDANCE, not a TSI service gap. Do NOT set tsiOwned=true in this situation.
+- If daysSinceLAC is high: TSI has not attempted contact recently — this IS a service gap. Set tsiOwned=true.
+- The service team (serviceTeam / teamDivision) may include a CSL (Customer Success Lead) — the pooled service rep model. Proactive touches from CSL are normal service operations. Billing collection calls (from collections team) are NOT value-add contact.
+- When LAC/LCR data is null: fall back to callsInPeriod and daysSinceLastTicketUpdate as secondary signals, but note the data limitation explicitly.
+
+TICKET SUBJECT READING — REQUIRED:
+Do NOT assess whether an open ticket is a TSI service gap based solely on its type field.
+You MUST read the ticket subject to understand what the request is actually about. Examples:
+- Type = "AE Request" + Subject = "Request for new service pages" → This is a radio market referral/upsell request, NOT a service failure. The "AE" is an Account Executive in a partner radio market. This is NOT a TSI service gap.
+- Type = "Feature Update" + Subject = "Google posts not showing" → This IS a potential TSI execution gap.
+- Type = "Support Request" + Subject = "Wrong business hours on Google" → This may be a TSI service gap depending on how long it's been open.
+Read the subject. Make a judgment about whether the ticket represents a real service issue or a workflow artifact.
 
 ### Financial
 | Signal | Meaning |
@@ -502,9 +551,16 @@ Return a JSON object with this exact structure. Be specific — use the actual n
     "service": {
       "score": "A|B|C|D|F",
       "status": "healthy|watch|gap|critical",
-      "actual": { "callsInPeriod": <number>, "smsInPeriod": <number>, "openTickets": <number>, "daysSinceLastTouchpoint": <number or null>, "hasBlockedTickets": <boolean> },
-      "benchmark": "2+ outbound calls per 90 days, no tickets open >30 days, last touchpoint within 30 days for mature/veteran accounts",
-      "narrative": "honest assessment of TSI's service quality for this account — calls made, ticket handling, recency of contact. If TSI hasn't called in 90 days, say so plainly.",
+      "actual": {
+        "callsInPeriod": <number>,
+        "smsInPeriod": <number>,
+        "openTickets": <number>,
+        "daysSinceLAC": <number or null — days since last call attempt by TSI>,
+        "daysSinceLCR": <number or null — days since client last actually responded/talked to TSI>,
+        "hasBlockedTickets": <boolean>
+      },
+      "benchmark": "2+ outbound calls per 90 days, LAC within 30 days for mature/veteran, no blocked non-cancel tickets",
+      "narrative": "honest assessment of TSI's service quality — distinguish TSI not calling (tsiOwned=true) from client not answering (tsiOwned=false). State LAC date. If open tickets exist, summarize what they are based on ticket subject — not just type. Note if any open ticket appears to be a workflow artifact (AE Request = radio market referral) rather than a real service issue.",
       "tsiOwned": true or false,
       "action": "what TSI should do before the cancel call, or null if service is healthy"
     },
@@ -550,88 +606,4 @@ Return a JSON object with this exact structure. Be specific — use the actual n
         "currentScheduledStatus": <string or null — scheduledCancellation.cancelStatus>,
         "currentCancelReason": <string or null>
       },
-      "benchmark": "First-time cancel with no prior history = unknown. Repeat cancel pattern = high risk. Prior save with known reason = actionable.",
-      "narrative": "Describe the cancellation history: first time or repeat, what saved them before if applicable, known reasons/competitors, current scheduled status.",
-      "tsiOwned": false,
-      "action": "how cancellation history should inform the pitch approach — reference what worked before if a save exists"
-    },
-    "social": {
-      "score": "A|B|C|D|F|N/A",
-      "status": "healthy|watch|gap|critical|no_data|not_applicable",
-      "actual": {
-        "upcomingPostCount": <number or null>,
-        "recentlySentCount": <number or null>,
-        "scheduledNetworks": <string[] or null>,
-        "pageFans28day": <number or null>,
-        "pageImpressions28day": <number or null>,
-        "pageImpressionsChangePct28day": <number or null>,
-        "pagePostEngagements28day": <number or null>,
-        "sentimentScore": <number or null — avgSentiment>
-      },
-      "benchmark": "Active scheduling (4+ posts/month across 2+ networks), stable or growing audience, positive engagement trend.",
-      "narrative": "Describe social health: scheduling activity, audience trend, engagement quality. If not subscribed, note N/A.",
-      "tsiOwned": false,
-      "action": "..."
-    }
-  },
-  "prioritizedGaps": [
-    {
-      "dimension": "gbp|website|listings|reputation|pipeline|service|financial|structural|cancellation_history|social",
-      "severity": "critical|high|medium|low",
-      "summary": "one punchy sentence with the specific number — e.g. 'GBP impressions at 24% of benchmark for a mature account'",
-      "tsiOwned": true or false
-    }
-  ],
-  "topGap": "The single most important gap or risk in one sentence — either the worst performance gap or the TSI service issue if one exists"
-}
-
-Rules:
-- Include all 10 dimensions in every response
-- prioritizedGaps should include ALL dimensions scoring C or below, ranked by severity
-- N/A dimensions (not_applicable status) are excluded from prioritizedGaps
-- If any service metric indicates TSI dropped the ball, set tsiOwned: true on the service dimension AND set tsiServiceGap: true at the top level
-- topGap should surface a TSI service gap over a client performance gap if both exist — we need to own that going into the call
-- The financial dimension's action field is the concession eligibility summary — this is used directly in the retention brief
-- The cancellation_history dimension's action field should reference prior save tactics if they exist
-- IMPORTANT: Cancellation Request, Account Resolution, and Accounts Receivable ticket types are NOT in openTicketDetails — they are filtered before you receive this data. These are billing workflow artifacts, not TSI service failures. If you see any mention of them in the raw data, ignore them entirely for service dimension scoring.
-- Return only the JSON object`;
-}
-
-export async function runGapAuditor(data: FetchedData, periodDays = 90): Promise<GapAuditResult> {
-  const apiKey = getAnthropicApiKey();
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
-      messages: [{ role: 'user', content: buildGapAuditorPrompt(data, periodDays) }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    throw new Error(`Gap auditor (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from gap auditor');
-
-  try {
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON in gap auditor response');
-    return JSON.parse(match[0]) as GapAuditResult;
-  } catch {
-    throw new Error(`Gap auditor returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
-
-
+   

@@ -81,6 +81,7 @@ export interface RetentionEventDoc {
   gapAudit: GapAuditResult | null;
   errors: Record<string, string>;
   pipelineAtRisk: number;
+  competitors?: string[];  // named competitors extracted from cancel reason — for future competitive intel
 }
 
 export interface GapSnapshotDoc {
@@ -149,9 +150,4 @@ export async function getRecentRetentionEvent(
   const result = await db
     .collection<RetentionEventDoc>('retention_events')
     .findOne(
-      { gpid, triggeredAt: { $gte: cutoff } },
-      { sort: { triggeredAt: -1 } }
-    );
-  return result as RetentionEventDoc | null;
-}
-
+      { gpid, triggeredAt: {

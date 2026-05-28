@@ -31,18 +31,41 @@ export interface FalconCancellationEvent {
   pendingCancelDate: string | null;
 }
 
+export interface TeamMember {
+  name: string;
+  email: string | null;
+  role: { code: string; label: string } | null;
+}
+
+export interface ClientServicingInfo {
+  lastAttemptedContact: string | null;  // LAC — ISO date of most recent call attempt (every dial)
+  responded: string | null;             // LCR — ISO date client last actually talked to TSI
+  lastValueProvided: string | null;     // ISO date of last value-add touchpoint
+  teamDivision: { code: string; label: string } | null;
+  serviceTeam: TeamMember[];            // CSL and other assigned reps
+}
+
+export interface ContentGenActivity {
+  lastCompletedAt: string | null;  // ISO date of last Client Hub content generation
+  lastPageType: string | null;     // "Geo" | "FAQ" | "Blog" — what was last generated
+}
+
 export interface FalconClient {
   id: string;
   name: string;
   status: string;
   tsiMarket: string;
   price: number | null;
-  gpPaymentStatus: string | null;
+  paymentStatus: string | null;    // CURRENT | PAST_DUE — null until Falcon dev resolves permissions
+  gpPaymentStatus: string | null;  // legacy field — kept for compatibility
   gpid: string | null;         // finance external service ID
   freshdeskId: string | null;  // ticketing external service ID
   vcitaId: string | null;      // crm external service ID
   billingEvents: FalconBillingEvent[];          // BillingHistoryItem activities
   cancellationHistory: FalconCancellationEvent[];  // CancellationLifecycleItem activities
+  servicing: ClientServicingInfo | null;        // LAC, LCR, teamDivision, CSL list
+  contentGenActivity: ContentGenActivity | null; // last Client Hub automation (Geo/FAQ/Blog only)
+  latestSaveEvent: { savedAt: string | null } | null; // most recent save from cancellation
   subscription: {
     id: string;
     startDate: string;
@@ -92,6 +115,11 @@ export interface DudaSiteUpdate {
   detail: string;
 }
 
+export interface DudaPage {
+  title: string;
+  path: string;
+}
+
 export interface DudaSiteStats {
   siteAlias: string | null;
   lastPublished: string | null;
@@ -101,6 +129,7 @@ export interface DudaSiteStats {
   periodStart: string;
   periodEnd: string;
   totalPages: number;
+  pages: DudaPage[];            // full page inventory with title + path for analyst classification
   publishedPosts: DudaContentItem[];
   siteUpdates: DudaSiteUpdate[];
 }
@@ -223,62 +252,4 @@ export interface SociFbInsights {
 export interface SociTopPost {
   id: string;
   message: string;
-  impressions: number;
-  impressionsOrganic: number;
-  impressionsViral: number;
-  engagedUsers: number;
-  postClicks: number;
-  scheduledTime: string;
-}
-
-export interface SociSentiment {
-  positive: number;
-  neutral: number;
-  negative: number;
-  avgSentiment: number;
-}
-
-export interface SociPeakHour {
-  hour: number;
-  value: number;
-}
-
-export interface SociDemographics {
-  women: { total: number; byAge: Record<string, number> };
-  men:   { total: number; byAge: Record<string, number> };
-}
-
-export interface SociData {
-  projectId: string;
-  fbNetworkId: string | null;
-  upcomingPostCount: number;
-  recentlySentCount: number;
-  scheduledNetworks: string[];
-  upcomingPosts: SociPost[];
-  pageMetrics: SociPageMetrics | null;
-  fbInsights: SociFbInsights | null;
-  topPosts: SociTopPost[];
-  sentiment: SociSentiment | null;
-  peakHours: SociPeakHour[];
-  demographics: SociDemographics | null;
-  reviewCounts: Record<string, number>;
-  periodStart: string;
-  periodEnd: string;
-}
-
-export interface ReportData {
-  meta: {
-    clientId: string;
-    generatedAt: string;
-    periodDays: number;
-  };
-  client: FalconClient;
-  gbp: GbpInsights | null;
-  gbpReviews: GbpReview[];
-  duda: DudaSiteStats | null;
-  yext: YextListingsData | null;
-  vcita: VcitaData | null;
-  activities: ActivityData | null;
-  soci: SociData | null;
-  errors: Record<string, string>;
-}
+  

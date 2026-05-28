@@ -248,6 +248,50 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
           callsThisPeriod: activities.callsThisPeriod,
         }
       : null,
+    // TSI service contact story — built from Falcon clientServicingInformation
+    // LAC = lastAttemptedContact (every call dial, including voicemails and no-answers)
+    // LCR = responded (date the client actually picked up and had a real conversation with TSI)
+    // These are the authoritative contact signals — NOT ticket updatedAt
+    servicing: client.servicing
+      ? {
+          // LAC / LCR contact story — use these to frame contact narrative
+          lastAttemptedContact: client.servicing.lastAttemptedContact,
+          daysSinceLAC: client.servicing.lastAttemptedContact
+            ? Math.floor((Date.now() - new Date(client.servicing.lastAttemptedContact).getTime()) / (1000 * 60 * 60 * 24))
+            : null,
+          lastClientResponse: client.servicing.responded,
+          daysSinceLCR: client.servicing.responded
+            ? Math.floor((Date.now() - new Date(client.servicing.responded).getTime()) / (1000 * 60 * 60 * 24))
+            : null,
+          lastValueProvided: client.servicing.lastValueProvided,
+          teamDivision: client.servicing.teamDivision,
+          // CSL = Customer Success Lead (pooled service rep assigned to this account)
+          // These are the humans responsible for the monthly value touch
+          serviceTeam: client.servicing.serviceTeam.map(m => ({
+            name: m.name,
+            role: m.role?.label ?? null,
+          })),
+        }
+      : null,
+    // contentGenActivity = Client Hub automation only (Geo, FAQ, Blog pages)
+    // This is NOT the full content picture — Duda is the source of truth for all site content
+    // null here does NOT mean no content was published; it means the automation tool wasn't used
+    contentGenActivity: client.contentGenActivity
+      ? {
+          lastCompletedAt: client.contentGenActivity.lastCompletedAt,
+          lastPageType: client.contentGenActivity.lastPageType,
+          note: 'This reflects Client Hub automation only (Geo/FAQ/Blog). Duda page inventory below shows the full site content picture.',
+        }
+      : null,
+    // paymentStatus — CURRENT | PAST_DUE (null until Falcon dev resolves permissions)
+    paymentStatus: client.paymentStatus,
+    // Duda page inventory — full list of site pages with title and path
+    // Classify into: service pages (what they offer), geo pages (city/area targeting),
+    // FAQ pages (Q&A content), blog posts, and other
+    // Use this to give SPECIFIC content improvement recommendations (not just "add more pages")
+    websitePageInventory: (hasWebsite || hasSEO) && duda?.pages?.length
+      ? duda.pages.slice(0, 30) // cap at 30 to stay in context budget
+      : null,
     // Billing events from the last 12 months — use to assess financial concession eligibility
     // Key: max 2 financial offerings per 12-month rolling period; no back-to-back
     billingHistory: recentBillingEvents.length > 0 ? recentBillingEvents : null,
@@ -305,6 +349,11 @@ Before writing anything, reason through:
 - NEVER say "no active products", "no website", "no listings", or anything implying the client isn't subscribed, based on null data. Only conclude a product is absent if subscribedProducts explicitly shows false.
 - When subscribed but data is null: note that "data was unavailable for this period" and pivot to what IS available (vcita leads, activities, reviews, service keys, tenure).
 
+**GBP ZERO vs. UNAVAILABLE — CRITICAL DISTINCTION:**
+- GBP data = null → the GBP fetch FAILED or the account is unresolved. Flag this as a setup issue needing investigation. Do NOT say "your GBP shows zero impressions." The correct framing is "we couldn't pull your Google data — there may be an account connection issue we need to resolve."
+- GBP data = present but zeros (impressions=0, callClicks=0) → real performance data. These are genuine zeros meaning the profile is active but generating no traffic. This IS a content/optimization gap, and is something TSI can actively work on. Say so specifically.
+- Never conflate these two — one is a fetch failure, one is a performance opportunity.
+
 **DEMYSTIFY EVERY METRIC — REQUIRED:**
 Never state a raw number without its plain-English business impact. A retention agent is on a phone call with a small business owner who doesn't know what "impressions" or "actions" mean.
 - BAD: "385 GBP call clicks"
@@ -337,101 +386,41 @@ If gbp.searchKeywords is present, translate the impression count using the actua
 **COMPETITIVE POSITION — RELATIVE STANDING, NOT COMPETITOR NAMES:**
 Do not attempt to name specific competitors. The brief has no data about actual competitor businesses. Instead, frame the competitive argument as relative market position: describe what happens to this client's standing when they go inactive versus the field of competitors in their category who stay active. Use the vertical benchmarks below to rate whether this client's metrics are above/at/below healthy for their vertical and tenure tier — then state that explicitly. "At 18 months, healthy [vertical] businesses in competitive markets typically have [X]. You're at [Y] — [above/at the low end of/below] that range." That is a statement with weight the agent can repeat on the call.
 
-**TICKET CONTEXT — CRITICAL:**
-The activities snapshot (openTickets, recentTickets) reflects only SERVICE tickets — Cancellation Request tickets have already been stripped out. However, when referencing open tickets as service gaps or work items:
-- NEVER tell the agent to "close the cancellation ticket" or "resolve the open cancellation request" — that is the very ticket that triggered this pipeline. It is not a service failure.
-- If openTickets > 0, the tickets are genuine support issues. Reference them as follow-up items for the CSR team, not as something the retention agent needs to close on this call.
-- Do NOT imply the cancellation decision is linked to an open ticket unless the agentCancelNotes explicitly say so.
+**CONTACT STORY — USE LAC/LCR, NOT TICKET DATES:**
+The \`servicing\` field contains the authoritative contact dates:
+- \`lastAttemptedContact\` (LAC) = the most recent date TSI called this client, even if they left a voicemail or got no answer
+- \`lastClientResponse\` (LCR) = the most recent date the client actually picked up and held a real conversation
+- \`daysSinceLAC\` / \`daysSinceLCR\` = computed days from today
 
-**CONTRACT VS M2M MODE:**
-- If contractTerms.isInCommitment === true: This changes everything. The agent has TIME. The pitch should be patient and confident — the client literally cannot cancel right now, so the goal is to repair the relationship during the commitment window, not panic-sell. Surface this prominently. The lossAssets and opportunityActions should reinforce what they're investing in during this period.
-- If M2M: Normal urgency applies — they can leave today.
+Framing rules:
+- If daysSinceLAC is LOW (TSI has called recently) but daysSinceLCR is HIGH (client hasn't responded): this is a client-avoidance pattern. TSI is doing their job. Frame it as: "We've been in contact regularly — you haven't had a chance to respond yet. This call is important."
+- If daysSinceLAC is HIGH (TSI hasn't called recently): this is a TSI service gap. Flag it honestly but do NOT suggest it as a cancellation reason. Instead, frame it as something TSI will commit to improving: "I'm reaching out because I want to make sure you've been getting the attention you deserve."
+- NEVER frame contact as "TSI hasn't contacted you in X days" in a mea-culpa tone. Instead frame as what TSI will do going forward.
+- The teamDivision / serviceTeam tells you WHO the CSL is — use their name if available: "I'm [CSL name], your dedicated account rep" is more personal.
+- CSL (Customer Success Lead) proactive calls are normal service cadence, not evidence of a problem. Billing collection calls are NOT value-add contact — don't count those.
 
-**SERVICE KEY ENFORCEMENT:**
-- Only generate insights for products listed in subscribedProducts as true
-- Do NOT reference revenue, pipeline dollars, invoices, or payments for a liteBMP client (Z key)
-- Do NOT generate website/SEO insights if neither W nor O is in serviceKeys
-- Do NOT generate listings/reputation insights if Y is not in serviceKeys
-- For social (S key): use upcomingPostCount, recentlySentCount, and scheduledNetworks to assess how active the social pipeline is. Note: engagement metrics (likes, reach, impressions) are not available — focus on pipeline activity (posts scheduled, networks covered).
+**BILLING DECLINE FRAMING:**
+If paymentStatus = "PAST_DUE" or agentCancelNotes mention billing issues:
+- The primary goal becomes: fix the payment situation first, then save the account.
+- Frame the conversation as: "Before we talk about whether to stay, let's make sure we can actually keep the account active. Our billing team can work with you on the balance — would it help to have that conversation first?"
+- Do NOT treat billing decline as a reason to skip S1 and go straight to discounts. Fix-payment-first, then value conversation.
+- Billing decline + long-term client = likely cashflow issue, not a value dissatisfaction issue. Distinguish these.
 
-Return this JSON structure:
+**NO MEA CULPA — CRITICAL:**
+NEVER write language that implies TSI failed this client as a stated fact, especially in the opportunity section. This includes:
+- "We haven't touched your content in 30 days" → DO NOT write this unless you have explicit proof from Duda page history
+- "We dropped the ball on your GBP" → DO NOT write this
+- "We should have been in better contact" → DO NOT write this
+- Any sentence that begins with "I want to apologize" or similar
+These statements undermine the agent's confidence and signal to the client that cancellation might be justified. If TSI genuinely has a service gap (verified by data), the gap-auditor flags it separately for the CSR team. The analyst's job is to build the strongest case for staying, not to confess.
 
-{
-  "clientProfile": "1 solid paragraph: who is this client, what business do they run, how long with TSI, what does their data say about how the business is performing. Be specific.",
-  "cancellationRisk": "your inferred read on why they're canceling — use data signals, payment status, ticket history, agent notes to infer the real reason",
-  "cancelReasonAnchor": "if agentCancelNotes contains a reason, explain in 1-2 sentences how that reason should frame the ENTIRE pitch — what angle to lead with. null if no notes.",
-  "topRetentionHook": "the single most compelling specific argument for this client — the thing an agent should say in the first 30 seconds",
-  "verticalContext": "2-3 sentences specific to THIS trade/vertical — not generic small business language. Name who their customers are and how they find new ones (Google search? referrals? Angi/HomeAdvisor? drive-by?). Describe the competitive dynamic as relative market position: what happens to their Google standing when they go inactive while competitors in their category stay active. Explain specifically why digital search presence matters for THIS type of business. Use the vertical benchmark table to explicitly state whether this client's key metrics are above/at/below healthy for their vertical and tenure tier — include the actual threshold and actual value. A reader should not be able to swap this paragraph onto a different vertical without rewriting it.",
-  "competitiveBenchmark": "1 sentence only. State the client's relative standing explicitly: '[Client] is [above/at/below] healthy for a [vertical] business at [tenure] months. Healthy at this stage means [specific metric threshold from the benchmark table]; they are at [actual value].' Use actual numbers from the data and actual thresholds from the benchmark table. If the vertical isn't in the benchmark table, use tenure-based reasoning instead.",
-  "seasonalContext": "2-3 sentences. REQUIRED: explicitly state HIGH/MODERATE/LOW seasonality for this vertical, then back it up with a specific reason. HIGH = name the exact demand driver (e.g. 'exterior painting season runs April-October because homeowners won't book during freeze risk'). LOW/MODERATE = say so plainly ('tattoo studios see flat demand year-round — there is no meaningful seasonal hook here'). Then state whether canceling in ${currentMonth} specifically is good or bad timing for this business, and why. NEVER claim peak season without a named specific driver. If this paragraph could apply to a different vertical, it is not acceptable — rewrite it.",
-  "opportunityActions": [
-    {
-      "title": "short label for this improvement",
-      "description": "specific thing TSI can do — actionable, not vague",
-      "expectedImpact": "what improvement should the client expect and roughly when"
-    }
-  ],
-  "lossAssets": [
-    {
-      "asset": "what they'd lose — be specific to their actual data (e.g. '847 Google impressions/month' not just 'Google presence')",
-      "disappearsBy": "Day 1 | Within 7 days | Within 30 days | Within 90 days",
-      "impact": "specific consequence for THIS business type in THIS market"
-    }
-  ],
-  "insights": [
-${insightsSpec}
-  ],
-  "pipelineAtRisk": ${pipelineAtRisk},
-  "tenureMonths": ${tenureMonths},
-  "monthlyPrice": ${client.price ?? 0},
-  "serviceKeys": ${JSON.stringify(serviceKeys)}
-}
+INSTEAD of mea culpa, use forward-looking commitments: "Here's what we're going to do in the next 30 days." That's empowering, not apologetic.
 
-Rules:
-- opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in the actual data gaps.
-- lossAssets: 3–6 items, ordered by timing (Day 1 first). Use actual numbers from their data where possible.
-- insights: only for subscribed products (${insightSections.join(', ')}). Use real numbers. High urgency should be reserved for genuine gaps, not used on everything.
-- Return only the JSON object.`;
-}
-
-export async function runAnalyst(
-  data: FetchedData,
-  periodDays: number,
-  agentNotes = ''
-): Promise<AnalystOutput> {
-  const apiKey = getAnthropicApiKey();
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap — fail fast, don't hang the pipeline
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
-      messages: [{ role: 'user', content: buildAnalystPrompt(data, periodDays, agentNotes) }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    throw new Error(`Analyst (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from analyst');
-
-  try {
-    // Strip markdown code fences if present, then extract { ... } block
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON object found in response');
-    return JSON.parse(match[0]) as AnalystOutput;
-  } catch {
-    throw new Error(`Analyst returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+**CONTENT INTELLIGENCE — BE SPECIFIC:**
+When recommending content improvements, name the specific type, not just "add more pages":
+- SERVICE PAGES: "We'll publish a dedicated page for [specific service]" (e.g., "emergency HVAC repair" not "services")
+- GEO PAGES: "We'll add a [City] page so you appear in local searches for [City] + [service]"
+- FAQ PAGES: "A Q&A page on '[common question in this vertical]' captures people researching before they call"
+- HYPER-LOCAL BLOG: "A blog post like 'Best time to repaint your [city] home' builds topical authority for local search"
+- The websitePageInventory field shows the actual current pages — reference what's already there and what specific type is missing. "You have 3 service pages — we'll add 2 geo pages and 1 FAQ page this month."
+- Old clients (high tenureMonths) may have 
