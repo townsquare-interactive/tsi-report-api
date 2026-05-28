@@ -270,4 +270,6 @@ export async function writeRetentionNote(
   const fdResult = await fdResponse.json() as { id: number };
   return {
     noteId: fdResult.id,
-    noteUrl: `https://${domain}/helpdesk/tickets/${tic
+    noteUrl: `https://${domain}/helpdesk/tickets/${ticketId}`,
+  };
+}

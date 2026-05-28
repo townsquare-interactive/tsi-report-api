@@ -154,3 +154,5 @@ export async function getRecentRetentionEvent(
       { sort: { triggeredAt: -1 } }
     );
   return result as RetentionEventDoc | null;
+
+}
