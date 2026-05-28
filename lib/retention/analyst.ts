@@ -197,14 +197,24 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
           totalPages: duda.totalPages,
           siteUpdatesCount: duda.siteUpdates?.length ?? 0,
           publishedPostsCount: duda.publishedPosts?.length ?? 0,
+          lastPublished: duda.lastPublished,
         }
       : null,
     listings: hasListings && yext
       ? {
-          averageRating: yext.averageRating,
-          reviewCount: yext.reviewCount,
-          listingsLive: yext.listingsLive,
-          suppressedListings: yext.suppressedListings,
+          syncedListings: yext.syncedListings,
+          totalListings: yext.totalListings,
+          impressions: yext.impressions,
+          actions: yext.actions,
+          accuracy: yext.accuracy,
+          actionBreakdown: yext.actionBreakdown
+            ? {
+                tapToCall: yext.actionBreakdown.tapToCall,
+                drivingDirections: yext.actionBreakdown.drivingDirections,
+                website: yext.actionBreakdown.website,
+              }
+            : null,
+          periodNote: `All metrics cover the last ${periodDays} days`,
         }
       : null,
     pipeline: (hasFullBMP || hasLiteBMP)
@@ -215,6 +225,19 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
           upcomingPostCount: soci.upcomingPostCount,
           recentlySentCount: soci.recentlySentCount,
           scheduledNetworks: soci.scheduledNetworks,
+          // Engagement analytics
+          pageFans28day: soci.fbInsights?.pageFans28day ?? null,
+          pageFansChangePct28day: soci.fbInsights?.pageFansChangePct28day ?? null,
+          pageImpressions28day: soci.fbInsights?.pageImpressions28day ?? null,
+          pageImpressionsChangePct28day: soci.fbInsights?.pageImpressionsChangePct28day ?? null,
+          pageEngagedUsers28day: soci.fbInsights?.pageEngagedUsers28day ?? null,
+          pagePostEngagements28day: soci.fbInsights?.pagePostEngagements28day ?? null,
+          sentiment: soci.sentiment ?? null,
+          topPosts: soci.topPosts.slice(0, 3).map(p => ({
+            message: p.message,
+            impressions: p.impressions,
+            engagedUsers: p.engagedUsers,
+          })),
         }
       : hasSocial ? null : 'not_subscribed',
     activities: activities
