@@ -107,7 +107,15 @@
 
 **Export:** `getClientById(clientId: string, periodDays?: number): Promise<{ client: FalconClient, activities: ActivityData }>`
 
-**client fields:** `{ id, name, status, tsiMarket, price, gpPaymentStatus, gpid, freshdeskId, vcitaId, subscription }`
+**client fields (updated 2026-05-28):** `{ id, name, status, tsiMarket, price, gpPaymentStatus, gpid, freshdeskId, vcitaId, subscription, billingEvents, cancellationHistory, servicing, contentGenActivity, latestSaveEvent, paymentStatus }`
+
+**servicing (added 2026-05-28):** `ClientServicingInfo | null` — extracted from `clientServicingInformation.information`. Includes LAC (lastAttemptedContact), LCR (lastClientResponse/lastClientReached), and qualitative service notes. Used by analyst to distinguish TSI ghosting vs. responsive client context before the cancel call.
+
+**contentGenActivity (added 2026-05-28):** `ContentGenActivity | null` — extracted from the most recent `contentGenActivity` from Falcon's `ContentGenActivityItem` union type. Captures last content generation event for the client (blog, social copy, etc.). Used by analyst to assess whether content production has been active.
+
+**latestSaveEvent (added 2026-05-28):** `FalconCancellationEvent | null` — the most recent event where `cancelStatus === 'save'` from `cancellationHistory`. Shortcut for analyst to see last successful retention without parsing the full history array.
+
+**paymentStatus (added 2026-05-28):** `string | null` — extracted from `subscription.information.paymentStatus`. Surfaces current billing standing (e.g. "current", "past_due") without requiring analyst to dig through billingEvents.
 
 **GraphQL:** `externalServiceIds { id name }` — maps: `finance=gpid`, `ticketing=freshdeskId`, `crm=vcitaId`
 
@@ -194,6 +202,8 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 **Analytics response keys:** `VISITORS`, `VISITS`, `PAGE_VIEWS` (uppercase).
 
 **Important:** Partner API does NOT support domain-based lookup. Always use `site_name`.
+
+**RawDudaPage (updated 2026-05-28):** The local interface for Duda's `/pages` API response was renamed from `DudaPage` to `RawDudaPage` to avoid a TypeScript import conflict — `DudaPage` is also exported from `@/types/report` and used as the public-facing type. The local interface (`id`, `title`, `path`, `seo_enabled`) is used only during the fetch/transform step; results are mapped to the exported `DudaPage` type before being returned.
 
 **Returns:**
 - `siteAlias`, `lastPublished`, `pageViews`, `uniqueVisitors`, `visits`, `periodStart`, `periodEnd`
@@ -420,4 +430,15 @@ Each section includes `agentScript` (phone) and `emailVersion` (follow-up email)
 - **TypeScript** renders Section 3 entirely via `renderFinancialOption()` and `buildSection3Block()` — structured `escalationSequence` array must never be delegated to model interpretation. Haiku was truncating or skipping the expansion of typed arrays in earlier builds.
 - The two outputs are concatenated: `narrativeHtml + '\n' + section3Html`
 
-**HTML code fe
+**HTML code fence stripping (added 2026-05-28):** Haiku intermittently wraps its HTML output in ` ```html ``` ` fences despite explicit prompt instructions — identical to the JSON fence issue on Sonnet agents. Raw Haiku output is now stripped before concatenation with Section 3: `.replace(/^```(?:html)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()`. Without this, fences rendered literally in Freshdesk notes.
+
+**Gated:** Only fires when `FRESHDESK_WRITE_ENABLED=true`. Currently `false` (env var ID `o0Sl8OowmtlNMh2f`).
+
+**Signature (updated 2026-05-26):** `writeRetentionNote(ticketId, brief, gapAudit, clientName, agentNotes, serviceKeys: string[] = [], monthlyPrice: number | null = null)`
+
+**Header (updated 2026-05-26):**
+- Client name, tenure, at-risk value (pipeline $ if > 0, else `~Annual value: ~$X/yr`, never "$0")
+- Products line — TypeScript-rendered from `serviceKeys` via `SERVICE_KEY_LABELS` map, never vendor names
+- TSI service gap flag if present
+
+**SERVICE_KEY_LABELS:** W→Websi
