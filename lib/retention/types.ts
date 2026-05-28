@@ -176,4 +176,8 @@ export interface GapAuditResult {
     // Social media performance — scored dimension (N/A if not subscribed)
     social: GapAuditDimension;
   };
-  // Ranked 
+  // Ranked
+  prioritizedGaps: PrioritizedGap[];
+  // The single most important gap or risk, in one sentence
+  topGap: string;
+}

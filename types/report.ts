@@ -250,6 +250,63 @@ export interface SociFbInsights {
 }
 
 export interface SociTopPost {
+export interface SociTopPost {
   id: string;
   message: string;
-  
+  impressions: number;
+  engagements: number;
+  createdTime: string;
+}
+
+export interface SociSentiment {
+  avgSentiment: number;
+  positivePct: number;
+  negativePct: number;
+  neutralPct: number;
+  totalReviews: number;
+}
+
+export interface SociPeakHour {
+  dayOfWeek: number;
+  hour: number;
+  engagementScore: number;
+}
+
+export interface SociDemographics {
+  ageGender: Record<string, number>;
+  countries: Record<string, number>;
+  cities: Record<string, number>;
+}
+
+export interface SociData {
+  upcomingPostCount: number;
+  recentlySentCount: number;
+  scheduledNetworks: string[];
+  upcomingPosts: SociPost[];
+  pageMetrics: SociPageMetrics | null;
+  fbInsights: SociFbInsights | null;
+  topPosts: SociTopPost[];
+  sentiment: SociSentiment | null;
+  peakHours: SociPeakHour[];
+  demographics: SociDemographics | null;
+  reviewCounts: Record<string, number>;
+  periodStart: string;
+  periodEnd: string;
+}
+
+export interface ReportData {
+  meta: {
+    clientId: string;
+    generatedAt: string;
+    periodDays: number;
+  };
+  client: FalconClient;
+  gbp: GbpInsights | null;
+  gbpReviews: GbpReview[];
+  duda: DudaSiteStats | null;
+  yext: YextListingsData | null;
+  vcita: VcitaData | null;
+  activities: ActivityData | null;
+  soci: SociData | null;
+  errors: Record<string, string>;
+}
