@@ -235,9 +235,9 @@ export async function writeRetentionNote(
   if (!rawNarrativeHtml) throw new Error('Empty response from note writer');
 
   // Strip HTML code fences — Haiku intermittently wraps output in ```html ... ``` despite
-  // being told not to. Same pattern applied to Sonnet agents for JSON fences.
+  // being told not to. Leading \s* handles newlines Haiku sometimes emits before the fence.
   const narrativeHtml = rawNarrativeHtml
-    .replace(/^```(?:html)?\s*/i, '')
+    .replace(/^\s*```(?:html)?\s*/i, '')
     .replace(/\s*```\s*$/i, '')
     .trim();
 
@@ -270,7 +270,4 @@ export async function writeRetentionNote(
   const fdResult = await fdResponse.json() as { id: number };
   return {
     noteId: fdResult.id,
-    noteUrl: `https://${domain}/helpdesk/tickets/${ticketId}`,
-  };
-}
-
+    noteUrl: `https://${domain}/helpdesk/tickets/${tic
