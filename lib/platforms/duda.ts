@@ -27,7 +27,7 @@ interface DudaBlogPost {
   status?: string;
 }
 
-interface DudaPage {
+interface RawDudaPage {
   uuid?: string;
   title?: string;
   path?: string;
@@ -86,10 +86,10 @@ export async function getDudaData(
     } catch { blogPosts = []; }
   }
 
-  let pages: DudaPage[] = [];
+  let pages: RawDudaPage[] = [];
   if (pagesRes.ok) {
     try {
-      const pagesData = await pagesRes.json() as { results?: DudaPage[] } | DudaPage[];
+      const pagesData = await pagesRes.json() as { results?: RawDudaPage[] } | RawDudaPage[];
       pages = Array.isArray(pagesData) ? pagesData : (pagesData.results ?? []);
     } catch { pages = []; }
   }
