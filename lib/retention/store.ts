@@ -120,12 +120,12 @@ export async function getRetentionHistory(
   limit = 5
 ): Promise<RetentionEventDoc[]> {
   const db = await getDb();
-  return db
+  return (await db
     .collection<RetentionEventDoc>('retention_events')
     .find({ gpid })
     .sort({ triggeredAt: -1 })
     .limit(limit)
-    .toArray() as RetentionEventDoc[];
+    .toArray()) as RetentionEventDoc[];
 }
 
 // Returns true if a Freshdesk note has already been posted for this ticket ID.
