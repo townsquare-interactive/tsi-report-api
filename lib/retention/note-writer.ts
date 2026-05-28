@@ -262,4 +262,14 @@ export async function writeRetentionNote(
   });
 
   if (!fdResponse.ok) {
-    const e
+    const errText = await fdResponse.text();
+    throw new Error(`Freshdesk note POST failed: ${fdResponse.status} — ${errText.slice(0, 200)}`);
+  }
+
+  const fdResult = await fdResponse.json() as { id: number };
+  return {
+    noteId: fdResult.id,
+    noteUrl: `https://${domain}/helpdesk/tickets/${ticketId}`,
+  };
+}
+
