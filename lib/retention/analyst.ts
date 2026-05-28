@@ -197,46 +197,24 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
           totalPages: duda.totalPages,
           siteUpdatesCount: duda.siteUpdates?.length ?? 0,
           publishedPostsCount: duda.publishedPosts?.length ?? 0,
-          lastPublished: duda.lastPublished,
         }
       : null,
     listings: hasListings && yext
       ? {
-          syncedListings: yext.syncedListings,
-          totalListings: yext.totalListings,
-          impressions: yext.impressions,
-          actions: yext.actions,
-          accuracy: yext.accuracy,
-          // Action breakdown — all from Google (Yext tracks Google listing actions)
-          actionBreakdown: yext.actionBreakdown
-            ? {
-                tapToCall: yext.actionBreakdown.tapToCall,
-                drivingDirections: yext.actionBreakdown.drivingDirections,
-                website: yext.actionBreakdown.website,
-              }
-            : null,
-          periodNote: `All metrics cover the last ${periodDays} days`,
+          averageRating: yext.averageRating,
+          reviewCount: yext.reviewCount,
+          listingsLive: yext.listingsLive,
+          suppressedListings: yext.suppressedListings,
         }
-      : hasListings ? null : 'not_subscribed',
-    pipeline: vcitaSnapshot,
+      : null,
+    pipeline: (hasFullBMP || hasLiteBMP)
+      ? vcitaSnapshot
+      : null,
     social: hasSocial && soci
       ? {
           upcomingPostCount: soci.upcomingPostCount,
           recentlySentCount: soci.recentlySentCount,
           scheduledNetworks: soci.scheduledNetworks,
-          // Engagement analytics
-          pageFans28day: soci.fbInsights?.pageFans28day ?? null,
-          pageFansChangePct28day: soci.fbInsights?.pageFansChangePct28day ?? null,
-          pageImpressions28day: soci.fbInsights?.pageImpressions28day ?? null,
-          pageImpressionsChangePct28day: soci.fbInsights?.pageImpressionsChangePct28day ?? null,
-          pageEngagedUsers28day: soci.fbInsights?.pageEngagedUsers28day ?? null,
-          pagePostEngagements28day: soci.fbInsights?.pagePostEngagements28day ?? null,
-          sentiment: soci.sentiment ?? null,
-          topPosts: soci.topPosts.slice(0, 3).map(p => ({
-            message: p.message,
-            impressions: p.impressions,
-            engagedUsers: p.engagedUsers,
-          })),
         }
       : hasSocial ? null : 'not_subscribed',
     activities: activities
@@ -360,4 +338,76 @@ Return this JSON structure:
   "cancellationRisk": "your inferred read on why they're canceling — use data signals, payment status, ticket history, agent notes to infer the real reason",
   "cancelReasonAnchor": "if agentCancelNotes contains a reason, explain in 1-2 sentences how that reason should frame the ENTIRE pitch — what angle to lead with. null if no notes.",
   "topRetentionHook": "the single most compelling specific argument for this client — the thing an agent should say in the first 30 seconds",
-  "verticalContext": "2-3 s
+  "verticalContext": "2-3 sentences specific to THIS trade/vertical — not generic small business language. Name who their customers are and how they find new ones (Google search? referrals? Angi/HomeAdvisor? drive-by?). Describe the competitive dynamic as relative market position: what happens to their Google standing when they go inactive while competitors in their category stay active. Explain specifically why digital search presence matters for THIS type of business. Use the vertical benchmark table to explicitly state whether this client's key metrics are above/at/below healthy for their vertical and tenure tier — include the actual threshold and actual value. A reader should not be able to swap this paragraph onto a different vertical without rewriting it.",
+  "competitiveBenchmark": "1 sentence only. State the client's relative standing explicitly: '[Client] is [above/at/below] healthy for a [vertical] business at [tenure] months. Healthy at this stage means [specific metric threshold from the benchmark table]; they are at [actual value].' Use actual numbers from the data and actual thresholds from the benchmark table. If the vertical isn't in the benchmark table, use tenure-based reasoning instead.",
+  "seasonalContext": "2-3 sentences. REQUIRED: explicitly state HIGH/MODERATE/LOW seasonality for this vertical, then back it up with a specific reason. HIGH = name the exact demand driver (e.g. 'exterior painting season runs April-October because homeowners won't book during freeze risk'). LOW/MODERATE = say so plainly ('tattoo studios see flat demand year-round — there is no meaningful seasonal hook here'). Then state whether canceling in ${currentMonth} specifically is good or bad timing for this business, and why. NEVER claim peak season without a named specific driver. If this paragraph could apply to a different vertical, it is not acceptable — rewrite it.",
+  "opportunityActions": [
+    {
+      "title": "short label for this improvement",
+      "description": "specific thing TSI can do — actionable, not vague",
+      "expectedImpact": "what improvement should the client expect and roughly when"
+    }
+  ],
+  "lossAssets": [
+    {
+      "asset": "what they'd lose — be specific to their actual data (e.g. '847 Google impressions/month' not just 'Google presence')",
+      "disappearsBy": "Day 1 | Within 7 days | Within 30 days | Within 90 days",
+      "impact": "specific consequence for THIS business type in THIS market"
+    }
+  ],
+  "insights": [
+${insightsSpec}
+  ],
+  "pipelineAtRisk": ${pipelineAtRisk},
+  "tenureMonths": ${tenureMonths},
+  "monthlyPrice": ${client.price ?? 0},
+  "serviceKeys": ${JSON.stringify(serviceKeys)}
+}
+
+Rules:
+- opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in the actual data gaps.
+- lossAssets: 3–6 items, ordered by timing (Day 1 first). Use actual numbers from their data where possible.
+- insights: only for subscribed products (${insightSections.join(', ')}). Use real numbers. High urgency should be reserved for genuine gaps, not used on everything.
+- Return only the JSON object.`;
+}
+
+export async function runAnalyst(
+  data: FetchedData,
+  periodDays: number,
+  agentNotes = ''
+): Promise<AnalystOutput> {
+  const apiKey = getAnthropicApiKey();
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    signal: AbortSignal.timeout(120_000), // 2-min hard cap — fail fast, don't hang the pipeline
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 6000,
+      messages: [{ role: 'user', content: buildAnalystPrompt(data, periodDays, agentNotes) }],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Analyst (Sonnet) error: ${response.status} ${response.statusText}`);
+  }
+
+  const result = await response.json() as { content: Array<{ type: string; text: string }> };
+  const text = result.content?.[0]?.text;
+  if (!text) throw new Error('Empty response from analyst');
+
+  try {
+    // Strip markdown code fences if present, then extract { ... } block
+    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON object found in response');
+    return JSON.parse(match[0]) as AnalystOutput;
+  } catch {
+    throw new Error(`Analyst returned unparseable JSON: ${text.slice(0, 300)}`);
+  }
+}
