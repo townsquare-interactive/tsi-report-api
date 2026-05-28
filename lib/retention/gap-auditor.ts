@@ -53,14 +53,20 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
     return Math.floor((Date.now() - mostRecent) / (1000 * 60 * 60 * 24));
   })();
 
-  // Exclude Cancellation Request tickets from service health evaluation.
-  const isCancelTicket = (type: string) =>
-    /cancellation/i.test(type);
+  // Exclude billing workflow ticket types from service health evaluation.
+  // Mirrors the blocklist in lib/falcon.ts — must stay in sync.
+  // - Cancellation Request: the retention trigger itself, not a service event
+  // - Accounts Receivable: billing/collections workflow artifact
+  // - Account Resolution: auto-created on billing declines — NOT a TSI service failure
+  const isWorkflowTicket = (type: string) =>
+    /cancellation/i.test(type) ||
+    /accounts?\s*receivable/i.test(type) ||
+    /account\s*resolution/i.test(type);
 
   const openTicketDetails = activities?.recentTickets
     ?.filter(t =>
       (t.status === 'OPEN' || t.status === 'IN_PROGRESS' || t.status === 'BLOCKED') &&
-      !isCancelTicket(t.type ?? '')
+      !isWorkflowTicket(t.type ?? '')
     )
     .map(t => ({
       subject: t.subject,
@@ -69,7 +75,7 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
       daysOpen: Math.floor((Date.now() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
     })) ?? [];
 
-  const hasBlockedTickets = openTicketDetails.some(t => t.status === 'BLOCKED');
+  const hasBlockedTickets = openTicketDetails.some(t => t.status === 'BLOCKED' && !isWorkflowTicket(t.type ?? ''));
 
   // Falcon returns serviceKeys as bundled strings e.g. ["WOYTZ"] — split into individual chars
   const serviceKeys: string[] = (client.subscription?.serviceKeys ?? [])
@@ -587,7 +593,7 @@ Rules:
 - topGap should surface a TSI service gap over a client performance gap if both exist — we need to own that going into the call
 - The financial dimension's action field is the concession eligibility summary — this is used directly in the retention brief
 - The cancellation_history dimension's action field should reference prior save tactics if they exist
-- IMPORTANT: Cancellation Request tickets are NOT in openTicketDetails — they are filtered before you receive this data
+- IMPORTANT: Cancellation Request, Account Resolution, and Accounts Receivable ticket types are NOT in openTicketDetails — they are filtered before you receive this data. These are billing workflow artifacts, not TSI service failures. If you see any mention of them in the raw data, ignore them entirely for service dimension scoring.
 - Return only the JSON object`;
 }
 
@@ -610,19 +616,4 @@ export async function runGapAuditor(data: FetchedData, periodDays = 90): Promise
   });
 
   if (!response.ok) {
-    throw new Error(`Gap auditor (Sonnet) error: ${response.status} ${response.statusText}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from gap auditor');
-
-  try {
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON in gap auditor response');
-    return JSON.parse(match[0]) as GapAuditResult;
-  } catch {
-    throw new Error(`Gap auditor returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+    throw new Error(`Gap audito

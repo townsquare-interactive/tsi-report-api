@@ -30,7 +30,7 @@ const SERVICE_KEY_LABELS: Record<string, string> = {
   E: 'E-Commerce',
   F: 'Facebook Ads',
   V: 'BMP',
-  Z: 'BMP Lite',
+  Z: 'Lead Nurturing',
   C: 'Call Trace',
   P: 'Call Trace Pro',
 };
@@ -230,8 +230,15 @@ export async function writeRetentionNote(
   }
 
   const aiResult = await aiResponse.json() as { content: Array<{ type: string; text: string }> };
-  const narrativeHtml = aiResult.content?.[0]?.text;
-  if (!narrativeHtml) throw new Error('Empty response from note writer');
+  const rawNarrativeHtml = aiResult.content?.[0]?.text;
+  if (!rawNarrativeHtml) throw new Error('Empty response from note writer');
+
+  // Strip HTML code fences — Haiku intermittently wraps output in ```html ... ``` despite
+  // being told not to. Same pattern applied to Sonnet agents for JSON fences.
+  const narrativeHtml = rawNarrativeHtml
+    .replace(/^```(?:html)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
 
   // Step 2: TypeScript appends Section 3 (deterministic, no model interpretation)
   const section3Html = buildSection3Block(brief, gapAudit, topGaps);
@@ -255,13 +262,4 @@ export async function writeRetentionNote(
   });
 
   if (!fdResponse.ok) {
-    const errText = await fdResponse.text();
-    throw new Error(`Freshdesk note POST failed: ${fdResponse.status} — ${errText.slice(0, 200)}`);
-  }
-
-  const fdResult = await fdResponse.json() as { id: number };
-  return {
-    noteId: fdResult.id,
-    noteUrl: `https://${domain}/helpdesk/tickets/${ticketId}`,
-  };
-}
+    const e

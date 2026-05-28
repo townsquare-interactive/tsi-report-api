@@ -327,6 +327,8 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 
 **10 dimensions (expanded 2026-05-21):** `gbp`, `website`, `listings`, `reputation`, `pipeline`, `service`, `financial`, `structural`, `cancellation_history`, `social`
 
+**Ticket blocklist in local filter (updated 2026-05-28):** The gap auditor builds `openTicketDetails` from `activities.recentTickets` with a local filter. Previously this only excluded Cancellation Request tickets (`/cancellation/i`). Now mirrors the full blocklist from `lib/falcon.ts`: also excludes Accounts Receivable (`/accounts?\s*receivable/i`) and Account Resolution (`/account\s*resolution/i`) tickets. The `hasBlockedTickets` flag also applies the full filter. Without this, billing workflow tickets (Account Resolution, AR) were appearing in `openTicketDetails`, the model correctly reported them as blocked tickets, and they surfaced in brief headers as TSI service failures — which is wrong. Prompt instruction also updated to explicitly tell the model to ignore these types.
+
 **New dimensions (added 2026-05-21):**
 - **financial** — contract type (M2M vs contract), commitment status, discount history (12-month and all-time), concession eligibility. Score reflects churn risk and Economics section availability, not revenue.
 - **structural** — setup completeness across all subscribed products: GBP resolved, website published + page count, social connected, posts live. `tsiOwned: true` — setup gaps are TSI's problem.
@@ -392,6 +394,8 @@ Each section includes `agentScript` (phone) and `emailVersion` (follow-up email)
 - **TypeScript** renders Section 3 entirely via `renderFinancialOption()` and `buildSection3Block()` — structured `escalationSequence` array must never be delegated to model interpretation. Haiku was truncating or skipping the expansion of typed arrays in earlier builds.
 - The two outputs are concatenated: `narrativeHtml + '\n' + section3Html`
 
+**HTML code fence stripping (added 2026-05-28):** Haiku intermittently wraps its HTML output in ` ```html ``` ` fences despite explicit prompt instructions — identical to the JSON fence issue on Sonnet agents. Raw Haiku output is now stripped before concatenation with Section 3: `.replace(/^```(?:html)?\s*/i, '').replace(/\s*```\s*$/i, '').trim()`. Without this, fences rendered literally in Freshdesk notes.
+
 **Gated:** Only fires when `FRESHDESK_WRITE_ENABLED=true`. Currently `false` (env var ID `o0Sl8OowmtlNMh2f`).
 
 **Signature (updated 2026-05-26):** `writeRetentionNote(ticketId, brief, gapAudit, clientName, agentNotes, serviceKeys: string[] = [], monthlyPrice: number | null = null)`
@@ -401,7 +405,7 @@ Each section includes `agentScript` (phone) and `emailVersion` (follow-up email)
 - Products line — TypeScript-rendered from `serviceKeys` via `SERVICE_KEY_LABELS` map, never vendor names
 - TSI service gap flag if present
 
-**SERVICE_KEY_LABELS:** W→Website, O→SEO, Y→Directories, T→Targeting Ads, S→Social, E→E-Commerce, F→Facebook Ads, V→BMP, Z→BMP Lite, C→Call Trace, P→Call Trace Pro
+**SERVICE_KEY_LABELS:** W→Website, O→SEO, Y→Directories, T→Targeting Ads, S→Social, E→E-Commerce, F→Facebook Ads, V→BMP, Z→Lead Nurturing, C→Call Trace, P→Call Trace Pro
 
 **Vendor name rule (added 2026-05-26):** Never expose third-party vendor names. "BMP"/"Growth Management" not vcita. "Directories" not Yext. "Website" not Duda. GBP/Google Business Profile is fine.
 
@@ -453,16 +457,4 @@ All TypeScript types for the report API response.
 
 TypeScript types for the retention pipeline.
 
-**Key types:** `FetchedData`, `AnalystOutput`, `GapAuditResult`, `RetentionBrief`, `RetentionEventDoc`
-
-**RetentionBrief:** `{ agentBrief, section1, section2, section3, pipelineAtRisk, tenureMonths }`
-
-**AnalystOutput** includes `monthlyPrice: number` — pass-through from `client.price` in Falcon, used by formatter for Section 3 free month cap check ($500 threshold).
-
-**AgentBrief** includes `contractNote: string | null` (added 2026-05-20) — pre-computed contract status string from `buildContractNote()`. Null for month-to-month clients. Non-null for 3- or 6-month contracts with end date, days remaining, or completion date.
-
-**Section3Economics fields:** `headline`, `openingCondition`, `eligibilityNotes`, `escalationSequence: FinancialOption[]`, `agentScript`, `emailVersion`
-
-**FinancialOption fields:** `type` (agent_discount | manager_discount | free_month | downgrade | credit), `requiresManager: boolean`, `label`, `eligibility`, `script`
-
-**GapAuditResult.dimensions (expanded 2026-05-21):** Now 10 dimensions — `gbp`, `website`, `listings`, `reputation`, `pipeline`, `service`, `financial`, `structural`, `cancellation_history`, `social`. `PrioritizedGap.dimension` union updated to include all 10 keys.
+**Key types:*
