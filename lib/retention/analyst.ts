@@ -423,4 +423,88 @@ When recommending content improvements, name the specific type, not just "add mo
 - FAQ PAGES: "A Q&A page on '[common question in this vertical]' captures people researching before they call"
 - HYPER-LOCAL BLOG: "A blog post like 'Best time to repaint your [city] home' builds topical authority for local search"
 - The websitePageInventory field shows the actual current pages — reference what's already there and what specific type is missing. "You have 3 service pages — we'll add 2 geo pages and 1 FAQ page this month."
-- Old clients (high tenureMonths) may have 
+- Old clients (high tenureMonths) may have legacy content from early in their subscription. Acknowledge what exists and suggest specific modern additions that would lift rankings now.
+
+**COMPETITOR INTELLIGENCE:**
+If agentCancelNotes or the cancel reason mentions a specific competitor by name:
+- Note the competitor in the competitors array in your output. Use the exact brand name (e.g., "Hibu", "Scorpion", "Thryv", "Yelp").
+- Do NOT attack competitors by name in the agent brief. Instead, anchor to what TSI provides that generic alternatives don't: dedicated account management, integrated platform (GBP + Website + Listings + CRM in one managed service), local market expertise, human review response.
+- Adjust the tone of opportunityActions to be differentiation-focused: "Here's what you'd lose that [competitor] doesn't offer."
+- If no competitor is named, return an empty array for competitors.
+
+**CANCELLATION URGENCY:**
+If scheduledCancellation.pendingCancelDate is within 7 days of today, or if the cancel reason implies immediate departure:
+- Flag urgency explicitly in topRetentionHook — the agent needs to open with time sensitivity.
+- Do NOT lead with the urgency as a threat. Instead: "I'm reaching out because your account is scheduled to close on [date] — I want to make sure you've seen everything before that happens."
+- The value story (S1) still leads. Urgency sets the frame; the brief delivers the argument.
+
+**SECOND CANCEL — TONE ADJUSTMENT:**
+If cancellationHistory shows 1 or more prior cancel requests that were saved:
+- Acknowledge the pattern implicitly in topRetentionHook — "We've had this conversation before" energy, but not accusatory.
+- Lead with what's different now: new data points, recent improvements, the specific number that's changed.
+- Do NOT repeat the same talking points from what might have saved them last time. Use fresh, specific data.
+
+**FORWARD-LOOKING opportunityActions:**
+opportunityActions are promises TSI is making — specific things that will happen if the client stays, not descriptions of current gaps.
+- WRONG: "Your GBP impressions are low."
+- RIGHT: "We'll audit your GBP category and publish 3 service posts this week to drive call clicks."
+- WRONG: "Your website hasn't been updated."
+- RIGHT: "We'll publish a dedicated [specific service] page within 5 business days."
+Each action should be specific enough for an agent to read verbatim on the phone.
+
+**CONFIDENT topRetentionHook:**
+The topRetentionHook should be a data-backed statement the agent can say verbatim — not a vague claim.
+- BAD: "Your digital presence is strong."
+- GOOD: "In the last 90 days, [X] people searched '[top keyword]' and found your business — that's real demand for exactly what you do."
+- BAD: "You have a lot to lose."
+- GOOD: "You have a $[pipelineAtRisk] pipeline of active proposals in your CRM right now — that disappears on Day 1 of cancellation."
+Pick the single most compelling statistic and build the hook around it.
+
+Rules:
+- opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in the actual data.
+- lossAssets: 3–6 items, ordered by timing (Day 1 first). Use actual numbers from their data where possible.
+- insights: only for subscribed products (${insightSections.join(', ')}). Use real numbers. Reserve high urgency for genuine gaps.
+- Return only the JSON object.`;
+}
+
+export async function runAnalyst(
+  data: FetchedData,
+  periodDays: number,
+  agentNotes = ''
+): Promise<AnalystOutput> {
+  const apiKey = getAnthropicApiKey();
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    signal: AbortSignal.timeout(120_000), // 2-min hard cap — fail fast, don't hang the pipeline
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 6000,
+      messages: [{ role: 'user', content: buildAnalystPrompt(data, periodDays, agentNotes) }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`Analyst (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
+  }
+
+  const result = await response.json() as { content: Array<{ type: string; text: string }> };
+  const text = result.content?.[0]?.text;
+  if (!text) throw new Error('Empty response from analyst');
+
+  try {
+    // Strip markdown code fences if present, then extract { ... } block
+    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON object found in response');
+    return JSON.parse(match[0]) as AnalystOutput;
+  } catch {
+    throw new Error(`Analyst returned unparseable JSON: ${text.slice(0, 300)}`);
+  }
+}

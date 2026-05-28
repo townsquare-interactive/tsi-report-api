@@ -606,4 +606,86 @@ Return a JSON object with this exact structure. Be specific — use the actual n
         "currentScheduledStatus": <string or null — scheduledCancellation.cancelStatus>,
         "currentCancelReason": <string or null>
       },
-   
+      "benchmark": "First-time cancel with no prior history = unknown. Repeat cancel pattern = high risk. Prior save with known reason = actionable.",
+      "narrative": "Describe the cancellation history: first time or repeat, what saved them before if applicable, known reasons/competitors, current scheduled status.",
+      "tsiOwned": false,
+      "action": "how cancellation history should inform the pitch approach — reference what worked before if a save exists"
+    },
+    "social": {
+      "score": "A|B|C|D|F|N/A",
+      "status": "healthy|watch|gap|critical|no_data|not_applicable",
+      "actual": {
+        "upcomingPostCount": <number or null>,
+        "recentlySentCount": <number or null>,
+        "scheduledNetworks": <string[] or null>,
+        "pageFans28day": <number or null>,
+        "pageImpressions28day": <number or null>,
+        "pageImpressionsChangePct28day": <number or null>,
+        "pagePostEngagements28day": <number or null>,
+        "sentimentScore": <number or null — avgSentiment>
+      },
+      "benchmark": "Active scheduling (4+ posts/month across 2+ networks), stable or growing audience, positive engagement trend.",
+      "narrative": "Describe social health: scheduling activity, audience trend, engagement quality. If not subscribed, note N/A.",
+      "tsiOwned": false,
+      "action": "..."
+    }
+  },
+  "prioritizedGaps": [
+    {
+      "dimension": "gbp|website|listings|reputation|pipeline|service|financial|structural|cancellation_history|social",
+      "severity": "critical|high|medium|low",
+      "summary": "one punchy sentence with the specific number — e.g. 'GBP impressions at 24% of benchmark for a mature account'",
+      "tsiOwned": true or false
+    }
+  ],
+  "topGap": "The single most important gap or risk in one sentence — either the worst performance gap or the TSI service issue if one exists"
+}
+
+Rules:
+- Include all 10 dimensions in every response
+- prioritizedGaps should include ALL dimensions scoring C or below, ranked by severity
+- N/A dimensions (not_applicable status) are excluded from prioritizedGaps
+- If any service metric indicates TSI dropped the ball, set tsiOwned: true on the service dimension AND set tsiServiceGap: true at the top level
+- topGap should surface a TSI service gap over a client performance gap if both exist — we need to own that going into the call
+- The financial dimension's action field is the concession eligibility summary — this is used directly in the retention brief
+- The cancellation_history dimension's action field should reference prior save tactics if they exist
+- IMPORTANT: Cancellation Request, Account Resolution, and Accounts Receivable ticket types are NOT in openTicketDetails — they are filtered before you receive this data. These are billing workflow artifacts, not TSI service failures. If you see any mention of them in the raw data, ignore them entirely for service dimension scoring.
+- Return only the JSON object`;
+}
+
+export async function runGapAuditor(data: FetchedData, periodDays = 90): Promise<GapAuditResult> {
+  const apiKey = getAnthropicApiKey();
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    signal: AbortSignal.timeout(120_000), // 2-min hard cap
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 6000,
+      messages: [{ role: 'user', content: buildGapAuditorPrompt(data, periodDays) }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`Gap auditor (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
+  }
+
+  const result = await response.json() as { content: Array<{ type: string; text: string }> };
+  const text = result.content?.[0]?.text;
+  if (!text) throw new Error('Empty response from gap auditor');
+
+  try {
+    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON in gap auditor response');
+    return JSON.parse(match[0]) as GapAuditResult;
+  } catch {
+    throw new Error(`Gap auditor returned unparseable JSON: ${text.slice(0, 300)}`);
+  }
+}

@@ -321,5 +321,68 @@ export async function getClientById(
     }));
 
   // Extract cancellation lifecycle history — all events, not period-filtered
+  // Extract cancellation lifecycle history — all events, not period-filtered
   const cancellationHistory: FalconCancellationEvent[] = (raw.activities ?? [])
-    .filter((a): a is RawCancellationLifecycleItem => a.__typename === 'CancellationLifecycleItem
+    .filter((a): a is RawCancellationLifecycleItem => a.__typename === 'CancellationLifecycleItem')
+    .map((c) => ({
+      event: c.event,
+      date: c.date,
+      cancelStatus: c.cancelStatus,
+      reason: c.reason,
+      pendingCancelDate: c.pendingCancelDate,
+    }));
+
+  // Extract servicing info — LAC (lastAttemptedContact) and LCR (responded)
+  const servicingInfo = raw.clientServicingInformation?.information ?? null;
+  const servicing: ClientServicingInfo | null = servicingInfo ? {
+    lastAttemptedContact: servicingInfo.lastAttemptedContact ?? null,
+    responded: servicingInfo.responded ?? null,
+    lastValueProvided: servicingInfo.lastValueProvided ?? null,
+    teamDivision: servicingInfo.teamDivision ?? null,
+    serviceTeam: (servicingInfo.serviceTeam?.members ?? []).map((m) => ({
+      name: m.name,
+      email: m.email ?? null,
+      role: m.role ? { code: m.role.code, label: m.role.label } : null,
+    })),
+  } : null;
+
+  const contentGenActivity: ContentGenActivity | null = raw.contentGenActivity ? {
+    lastCompletedAt: raw.contentGenActivity.lastCompletedAt ?? null,
+    lastPageType: raw.contentGenActivity.lastPageType ?? null,
+  } : null;
+
+  const client: FalconClient = {
+    id: raw.id,
+    name: raw.name,
+    status: raw.status,
+    tsiMarket: raw.tsiMarket,
+    price: raw.subscription?.information?.cost ?? null,
+    gpPaymentStatus: null,
+    gpid: extMap.get('finance') ?? null,
+    freshdeskId: extMap.get('ticketing') ?? null,
+    vcitaId: vcitaEntry?.name ?? null,
+    billingEvents,
+    cancellationHistory,
+    servicing,
+    contentGenActivity,
+    latestSaveEvent: raw.retention?.latestSaveEvent ?? null,
+    paymentStatus: raw.billing?.paymentStatus ?? null,
+    subscription: raw.subscription?.information
+      ? {
+          id: raw.subscription.id,
+          startDate: raw.subscription.information.startDate,
+          endDate: raw.subscription.information.endDate ?? null,
+          launchDate: raw.subscription.information.launchDate,
+          status: raw.subscription.information.status,
+          cost: raw.subscription.information.cost,
+          serviceKeys: raw.subscription.information.serviceKeys ?? [],
+          commitmentTerms: raw.subscription.information.commitmentTerms ?? null,
+          scheduledCancellation: raw.subscription.information.scheduledCancellation ?? null,
+        }
+      : null,
+  };
+
+  const activities = buildActivityData(raw.activities ?? [], periodDays);
+
+  return { client, activities };
+}

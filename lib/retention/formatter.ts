@@ -412,4 +412,46 @@ export async function runFormatter(
   const eligibility  = computeFinancialEligibility(billingEvents);
 
   // Fix $1 pipeline artifact: when pipelineAtRisk is suspiciously low (< $50),
-  // fall back to annual subscription value so the formatter has a meaningf
+  // Fix $1 pipeline artifact: when pipelineAtRisk is suspiciously low (< $50),
+  // fall back to annual subscription value so the formatter has a meaningful number.
+  // Analyst pipelineAtRisk is 0 for Z clients and may be near-zero for V clients with no active leads.
+  const annualValue = Math.round((analyst.monthlyPrice ?? 0) * 12);
+  const pipelineAtRiskOverride = analyst.pipelineAtRisk >= 50
+    ? analyst.pipelineAtRisk
+    : (annualValue > 0 ? annualValue : 0);
+
+  const prompt = buildFormatterPrompt(analyst, gapAudit, clientName, contractNote, eligibility, pipelineAtRiskOverride);
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 5000,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`Formatter (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
+  }
+
+  const result = await response.json() as { content: Array<{ type: string; text: string }> };
+  const text = result.content?.[0]?.text;
+  if (!text) throw new Error('Empty response from formatter');
+
+  try {
+    // Strip markdown code fences if the model wrapped the output (defensive — should not happen)
+    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    const match = stripped.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON in formatter response');
+    return JSON.parse(match[0]) as RetentionBrief;
+  } catch {
+    throw new Error(`Formatter returned unparseable JSON: ${text.slice(0, 300)}`);
+  }
+}
