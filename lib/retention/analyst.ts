@@ -127,6 +127,8 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
       name: client.name,
       market: client.tsiMarket,
       status: client.status,
+      vertical: client.vertical,         // e.g. "tree_service", "painting" — use for benchmark lookup
+      gccDate: client.gccDate,           // onboarding call date (often null)
       monthlyPrice: client.price,
       tenureMonths,
       serviceKeys,
@@ -283,8 +285,28 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
           note: 'This reflects Client Hub automation only (Geo/FAQ/Blog). Duda page inventory below shows the full site content picture.',
         }
       : null,
-    // paymentStatus — CURRENT | PAST_DUE (null until Falcon dev resolves permissions)
+    // paymentStatus — CURRENT | PAST_DUE from billing.paymentStatus
     paymentStatus: client.paymentStatus,
+    // Cancellation intelligence — competitor and what was already tried in prior saves
+    cancellationIntel: {
+      // Named competitor from the current cancel request (may be blank string — check truthiness)
+      competitor: scheduledCancellation?.competitor || null,
+      // What save solutions were already offered in THIS cancel request (comma-separated)
+      // CRITICAL: Do NOT recommend anything already on this list — it has already been tried
+      saveSolutionsOffered: scheduledCancellation?.saveSolutions || null,
+      // Prior cancel history — pattern matters (first-time vs. repeat canceller)
+      priorCancelCount: client.cancellationHistory.filter(e => e.cancelStatus === 'cancel_request' || e.event?.toLowerCase().includes('initiated')).length,
+      // Prior saves and what was offered each time
+      priorSaves: client.cancellationHistory
+        .filter(e => e.savedBy || e.savedAt || e.saveSolutions)
+        .map(e => ({
+          date: e.date,
+          savedBy: e.savedBy,
+          saveSolutions: e.saveSolutions,
+          competitor: e.competitor || null,
+        }))
+        .slice(0, 3),
+    },
     // Duda page inventory — full list of site pages with title and path
     // Classify into: service pages (what they offer), geo pages (city/area targeting),
     // FAQ pages (Q&A content), blog posts, and other
@@ -385,6 +407,7 @@ If gbp.searchKeywords is present, translate the impression count using the actua
 
 **COMPETITIVE POSITION — RELATIVE STANDING, NOT COMPETITOR NAMES:**
 Do not attempt to name specific competitors. The brief has no data about actual competitor businesses. Instead, frame the competitive argument as relative market position: describe what happens to this client's standing when they go inactive versus the field of competitors in their category who stay active. Use the vertical benchmarks below to rate whether this client's metrics are above/at/below healthy for their vertical and tenure tier — then state that explicitly. "At 18 months, healthy [vertical] businesses in competitive markets typically have [X]. You're at [Y] — [above/at the low end of/below] that range." That is a statement with weight the agent can repeat on the call.
+The \`client.vertical\` field contains the business type slug (e.g. "tree_service", "painting", "hvac") — use it to look up the correct benchmark row directly from the context tables below rather than guessing the vertical from the name or market.
 
 **CONTACT STORY — USE LAC/LCR, NOT TICKET DATES:**
 The \`servicing\` field contains the authoritative contact dates:
@@ -426,11 +449,22 @@ When recommending content improvements, name the specific type, not just "add mo
 - Old clients (high tenureMonths) may have legacy content from early in their subscription. Acknowledge what exists and suggest specific modern additions that would lift rankings now.
 
 **COMPETITOR INTELLIGENCE:**
-If agentCancelNotes or the cancel reason mentions a specific competitor by name:
-- Note the competitor in the competitors array in your output. Use the exact brand name (e.g., "Hibu", "Scorpion", "Thryv", "Yelp").
+The primary source for competitor data is \`cancellationIntel.competitor\` — this is the competitor the client named directly in Falcon when submitting the cancellation request. Check this field first. If it is non-null and non-empty, that is the confirmed competitor.
+Secondary source: agentCancelNotes or the cancel reason text may also mention a competitor by name.
+Rules:
+- If \`cancellationIntel.competitor\` is populated, use that exact name and include it in the competitors array. This is more reliable than notes-derived names.
+- If agentCancelNotes mentions a different or additional competitor, include that one too.
+- Use exact brand names in the competitors array (e.g., "Hibu", "Scorpion", "Thryv", "Yelp", "ReachLocal").
 - Do NOT attack competitors by name in the agent brief. Instead, anchor to what TSI provides that generic alternatives don't: dedicated account management, integrated platform (GBP + Website + Listings + CRM in one managed service), local market expertise, human review response.
 - Adjust the tone of opportunityActions to be differentiation-focused: "Here's what you'd lose that [competitor] doesn't offer."
-- If no competitor is named, return an empty array for competitors.
+- If no competitor is named in either source, return an empty array for competitors.
+
+**SAVE SOLUTIONS — DO NOT REPEAT FAILED OFFERS:**
+\`cancellationIntel.saveSolutionsOffered\` contains the retention solutions already offered to this client during the current cancellation request (comma-separated string from Falcon). This is what the team already tried. \`cancellationIntel.priorSaves[].saveSolutions\` shows what was offered in prior saves.
+- CRITICAL: Do NOT recommend any solution that appears in \`saveSolutionsOffered\` or in \`priorSaves[].saveSolutions\`. If you recommend something that was already tried and failed, the agent will lose credibility on the call.
+- If a discount or financial offer was already in \`saveSolutionsOffered\`, do NOT lead with another financial offer — pivot to value demonstration instead.
+- Use the prior save history (\`priorSaves\`) to understand the pattern: repeat cancellers who have been saved with the same offer before need a fresh angle.
+- If \`saveSolutionsOffered\` is null or empty, no constraint applies — recommend the strongest available option.
 
 **CANCELLATION URGENCY:**
 If scheduledCancellation.pendingCancelDate is within 7 days of today, or if the cancel reason implies immediate departure:
@@ -442,69 +476,4 @@ If scheduledCancellation.pendingCancelDate is within 7 days of today, or if the 
 If cancellationHistory shows 1 or more prior cancel requests that were saved:
 - Acknowledge the pattern implicitly in topRetentionHook — "We've had this conversation before" energy, but not accusatory.
 - Lead with what's different now: new data points, recent improvements, the specific number that's changed.
-- Do NOT repeat the same talking points from what might have saved them last time. Use fresh, specific data.
-
-**FORWARD-LOOKING opportunityActions:**
-opportunityActions are promises TSI is making — specific things that will happen if the client stays, not descriptions of current gaps.
-- WRONG: "Your GBP impressions are low."
-- RIGHT: "We'll audit your GBP category and publish 3 service posts this week to drive call clicks."
-- WRONG: "Your website hasn't been updated."
-- RIGHT: "We'll publish a dedicated [specific service] page within 5 business days."
-Each action should be specific enough for an agent to read verbatim on the phone.
-
-**CONFIDENT topRetentionHook:**
-The topRetentionHook should be a data-backed statement the agent can say verbatim — not a vague claim.
-- BAD: "Your digital presence is strong."
-- GOOD: "In the last 90 days, [X] people searched '[top keyword]' and found your business — that's real demand for exactly what you do."
-- BAD: "You have a lot to lose."
-- GOOD: "You have a $[pipelineAtRisk] pipeline of active proposals in your CRM right now — that disappears on Day 1 of cancellation."
-Pick the single most compelling statistic and build the hook around it.
-
-Rules:
-- opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in the actual data.
-- lossAssets: 3–6 items, ordered by timing (Day 1 first). Use actual numbers from their data where possible.
-- insights: only for subscribed products (${insightSections.join(', ')}). Use real numbers. Reserve high urgency for genuine gaps.
-- Return only the JSON object.`;
-}
-
-export async function runAnalyst(
-  data: FetchedData,
-  periodDays: number,
-  agentNotes = ''
-): Promise<AnalystOutput> {
-  const apiKey = getAnthropicApiKey();
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap — fail fast, don't hang the pipeline
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
-      messages: [{ role: 'user', content: buildAnalystPrompt(data, periodDays, agentNotes) }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    throw new Error(`Analyst (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from analyst');
-
-  try {
-    // Strip markdown code fences if present, then extract { ... } block
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON object found in response');
-    return JSON.parse(match[0]) as AnalystOutput;
-  } catch {
-    throw new Error(`Analyst returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+- Do NOT repeat the same talking points from what might have saved th

@@ -13,6 +13,8 @@ export interface ScheduledCancellation {
   cancelStatus: string | null;
   reason: string | null;
   notes: string | null;
+  competitor: string | null;         // Competitor named at time of cancellation request
+  saveSolutions: string | null;      // Comma-separated list of save solutions already offered
 }
 
 export interface FalconBillingEvent {
@@ -29,6 +31,11 @@ export interface FalconCancellationEvent {
   cancelStatus: string | null;
   reason: string | null;
   pendingCancelDate: string | null;
+  competitor: string | null;       // Named competitor at cancellation — "" when blank, null when field absent
+  saveSolutions: string | null;    // Comma-separated save solutions offered: "SEO Expansion,New Content,..."
+  savedBy: string | null;          // Rep name who saved the account
+  savedAt: string | null;          // ISO date of save
+  lifecycleAction: string | null;  // Falcon lifecycle action label
 }
 
 export interface TeamMember {
@@ -56,8 +63,10 @@ export interface FalconClient {
   status: string;
   tsiMarket: string;
   price: number | null;
-  paymentStatus: string | null;    // CURRENT | PAST_DUE — null until Falcon dev resolves permissions
+  paymentStatus: string | null;    // CURRENT | PAST_DUE from billing.paymentStatus
   gpPaymentStatus: string | null;  // legacy field — kept for compatibility
+  vertical: string | null;         // Business vertical slug from Falcon (e.g. "tree_service", "painting")
+  gccDate: string | null;          // Go-Current-Client date — date of onboarding call (often null)
   gpid: string | null;         // finance external service ID
   freshdeskId: string | null;  // ticketing external service ID
   vcitaId: string | null;      // crm external service ID
@@ -195,6 +204,7 @@ export interface VcitaData {
 export interface ActivityTicket {
   id: string;
   subject: string;
+  body: string | null;   // Full ticket body text — used by gap auditor for content-based gap decisions
   type: string | null;
   status: string;
   createdAt: string;
@@ -274,40 +284,4 @@ export interface SociPeakHour {
 
 export interface SociDemographics {
   women: { total: number; byAge: Record<string, number> };
-  men:   { total: number; byAge: Record<string, number> };
-}
-
-export interface SociData {
-  projectId: string;
-  fbNetworkId: string | null;
-  upcomingPostCount: number;
-  recentlySentCount: number;
-  scheduledNetworks: string[];
-  upcomingPosts: SociPost[];
-  pageMetrics: SociPageMetrics | null;
-  fbInsights: SociFbInsights | null;
-  topPosts: SociTopPost[];
-  sentiment: SociSentiment | null;
-  peakHours: SociPeakHour[];
-  demographics: SociDemographics | null;
-  reviewCounts: Record<string, number>;
-  periodStart: string;
-  periodEnd: string;
-}
-
-export interface ReportData {
-  meta: {
-    clientId: string;
-    generatedAt: string;
-    periodDays: number;
-  };
-  client: FalconClient;
-  gbp: GbpInsights | null;
-  gbpReviews: GbpReview[];
-  duda: DudaSiteStats | null;
-  yext: YextListingsData | null;
-  vcita: VcitaData | null;
-  activities: ActivityData | null;
-  soci: SociData | null;
-  errors: Record<string, string>;
-}
+  men:   { total: number; byAge: Record<

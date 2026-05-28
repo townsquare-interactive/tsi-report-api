@@ -84,6 +84,9 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
     )
     .map(t => ({
       subject: t.subject,
+      // body: full ticket text — use to determine if the request is a real service issue or a
+      // workflow artifact (e.g., AE Request body may say "radio market referral" → not a gap)
+      body: t.body ? t.body.slice(0, 300).trim() : null,
       type: t.type,
       status: t.status,
       daysOpen: Math.floor((Date.now() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
@@ -148,6 +151,7 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
     client: {
       name: client.name,
       market: client.tsiMarket,
+      vertical: client.vertical,  // business type slug — e.g. "tree_service", "painting", "hvac"
       monthlyPrice: client.price,
       tenureMonths,
       serviceKeys,
@@ -187,7 +191,23 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
       priorCancelRequests,
       savedFromCancel,
       uniqueCancelReasons,
-      currentScheduledCancellation: scheduledCancellation,
+      // competitor names from prior cancel events — pattern of competitive threat
+      competitorsNamed: cancellationHistory
+        .map(e => e.competitor)
+        .filter((c): c is string => !!c),
+      // save solutions offered in prior saves — what was tried and worked
+      priorSaveSolutions: cancellationHistory
+        .filter(e => e.saveSolutions)
+        .map(e => ({ date: e.date, saveSolutions: e.saveSolutions, savedBy: e.savedBy })),
+      currentScheduledCancellation: scheduledCancellation
+        ? {
+            ...scheduledCancellation,
+            // competitor named in the current cancellation request (from Falcon)
+            competitor: scheduledCancellation.competitor || null,
+            // save solutions already offered in this cancel event (comma-separated)
+            saveSolutions: scheduledCancellation.saveSolutions || null,
+          }
+        : null,
     },
     gbp: gbp
       ? {
@@ -444,13 +464,14 @@ CONTACT STORY — CRITICAL FRAMING:
 - The service team (serviceTeam / teamDivision) may include a CSL (Customer Success Lead) — the pooled service rep model. Proactive touches from CSL are normal service operations. Billing collection calls (from collections team) are NOT value-add contact.
 - When LAC/LCR data is null: fall back to callsInPeriod and daysSinceLastTicketUpdate as secondary signals, but note the data limitation explicitly.
 
-TICKET SUBJECT READING — REQUIRED:
+TICKET SUBJECT + BODY READING — REQUIRED:
 Do NOT assess whether an open ticket is a TSI service gap based solely on its type field.
-You MUST read the ticket subject to understand what the request is actually about. Examples:
+You MUST read the ticket subject AND body (when available) to understand what the request is actually about. The body provides additional context that often changes the classification. Examples:
 - Type = "AE Request" + Subject = "Request for new service pages" → This is a radio market referral/upsell request, NOT a service failure. The "AE" is an Account Executive in a partner radio market. This is NOT a TSI service gap.
 - Type = "Feature Update" + Subject = "Google posts not showing" → This IS a potential TSI execution gap.
 - Type = "Support Request" + Subject = "Wrong business hours on Google" → This may be a TSI service gap depending on how long it's been open.
-Read the subject. Make a judgment about whether the ticket represents a real service issue or a workflow artifact.
+- Body text mentioning "referred by [radio market]" or "AE introduction" → routing artifact, not a real service ticket.
+Read subject and body together. Make a judgment about whether the ticket represents a real service issue or a workflow artifact.
 
 ### Financial
 | Signal | Meaning |
@@ -484,6 +505,10 @@ Structural score measures setup quality and platform activation, not performance
 | priorCancelRequests >= 2 | Repeat cancel pattern — high churn risk, save is harder |
 | cancelReasons contain competitor name | Competitive threat — factor into pitch |
 | scheduledCancellation.cancelStatus = "PENDING" | Active scheduled cancel — urgency is real |
+| competitorsNamed (from cancel history) | Pattern of competitive threat across multiple events |
+| priorSaveSolutions | What was offered in prior saves — do not repeat failed offers |
+| currentScheduledCancellation.saveSolutions | What has ALREADY been offered in this event — do not recommend repeating these |
+| currentScheduledCancellation.competitor | Named competitor in the current cancel request |
 
 ---
 
@@ -603,13 +628,16 @@ Return a JSON object with this exact structure. Be specific — use the actual n
         "priorCancelRequests": <number>,
         "savedFromCancel": <number>,
         "uniqueCancelReasons": <string[]>,
+        "competitorsNamed": <string[] — all competitors mentioned across cancel history>,
         "currentScheduledStatus": <string or null — scheduledCancellation.cancelStatus>,
-        "currentCancelReason": <string or null>
+        "currentCancelReason": <string or null>,
+        "currentCompetitor": <string or null — competitor named in this cancel event>,
+        "saveSolutionsAlreadyOffered": <string or null — what was offered in this event; do NOT repeat>
       },
       "benchmark": "First-time cancel with no prior history = unknown. Repeat cancel pattern = high risk. Prior save with known reason = actionable.",
-      "narrative": "Describe the cancellation history: first time or repeat, what saved them before if applicable, known reasons/competitors, current scheduled status.",
+      "narrative": "Describe the cancellation history: first time or repeat, what saved them before if applicable, known reasons/competitors. If currentCompetitor is set, name it. If saveSolutionsAlreadyOffered is set, note what has already been tried so the pitch can avoid repeating it.",
       "tsiOwned": false,
-      "action": "how cancellation history should inform the pitch approach — reference what worked before if a save exists"
+      "action": "how cancellation history should inform the pitch approach — reference what worked before if a save exists; warn if prior save solutions have already been exhausted"
     },
     "social": {
       "score": "A|B|C|D|F|N/A",
@@ -644,48 +672,4 @@ Return a JSON object with this exact structure. Be specific — use the actual n
 Rules:
 - Include all 10 dimensions in every response
 - prioritizedGaps should include ALL dimensions scoring C or below, ranked by severity
-- N/A dimensions (not_applicable status) are excluded from prioritizedGaps
-- If any service metric indicates TSI dropped the ball, set tsiOwned: true on the service dimension AND set tsiServiceGap: true at the top level
-- topGap should surface a TSI service gap over a client performance gap if both exist — we need to own that going into the call
-- The financial dimension's action field is the concession eligibility summary — this is used directly in the retention brief
-- The cancellation_history dimension's action field should reference prior save tactics if they exist
-- IMPORTANT: Cancellation Request, Account Resolution, and Accounts Receivable ticket types are NOT in openTicketDetails — they are filtered before you receive this data. These are billing workflow artifacts, not TSI service failures. If you see any mention of them in the raw data, ignore them entirely for service dimension scoring.
-- Return only the JSON object`;
-}
-
-export async function runGapAuditor(data: FetchedData, periodDays = 90): Promise<GapAuditResult> {
-  const apiKey = getAnthropicApiKey();
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 6000,
-      messages: [{ role: 'user', content: buildGapAuditorPrompt(data, periodDays) }],
-    }),
-  });
-
-  if (!response.ok) {
-    const errBody = await response.text().catch(() => '');
-    throw new Error(`Gap auditor (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from gap auditor');
-
-  try {
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON in gap auditor response');
-    return JSON.parse(match[0]) as GapAuditResult;
-  } catch {
-    throw new Error(`Gap auditor returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+- N/A dimensions (not_applicable status) are excluded fro
