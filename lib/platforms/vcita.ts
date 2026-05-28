@@ -38,6 +38,7 @@ async function vcitaGet<T>(
   resourceKey: string
 ): Promise<T[]> {
   const res = await fetch(url, {
+    signal: AbortSignal.timeout(10_000),
     headers: {
       Authorization: `Bearer ${token}`,
       'x-on-behalf-of': businessUid,
@@ -163,7 +164,4 @@ export async function getVcitaData(
     conversations: conversationsThisPeriod,
     invoiceItems,
     estimateItems,
-    paymentItems,
-    leadSamples,
-  };
-}
+ 

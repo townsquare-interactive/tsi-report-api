@@ -75,7 +75,7 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
       daysOpen: Math.floor((Date.now() - new Date(t.createdAt).getTime()) / (1000 * 60 * 60 * 24)),
     })) ?? [];
 
-  const hasBlockedTickets = openTicketDetails.some(t => t.status === 'BLOCKED' && !isWorkflowTicket(t.type ?? ''));
+  const hasBlockedTickets = openTicketDetails.some(t => t.status === 'BLOCKED');
 
   // Falcon returns serviceKeys as bundled strings e.g. ["WOYTZ"] — split into individual chars
   const serviceKeys: string[] = (client.subscription?.serviceKeys ?? [])
@@ -616,20 +616,5 @@ export async function runGapAuditor(data: FetchedData, periodDays = 90): Promise
   });
 
   if (!response.ok) {
-    throw new Error(`Gap auditor (Sonnet) error: ${response.status} ${response.statusText}`);
-  }
-
-  const result = await response.json() as { content: Array<{ type: string; text: string }> };
-  const text = result.content?.[0]?.text;
-  if (!text) throw new Error('Empty response from gap auditor');
-
-  try {
-    const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON in gap auditor response');
-    return JSON.parse(match[0]) as GapAuditResult;
-  } catch {
-    throw new Error(`Gap auditor returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
-
+    const errBody = await response.text().catch(() => '');
+    thr

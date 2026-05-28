@@ -55,7 +55,7 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
   // Build named lead anecdote list — max 5 entries with email for spam judgment.
   // Format: "Name (email@domain.com)" so the model can distinguish real inquiries from spam.
   const leadNames = vcita?.leadSamples
-    ?.filter(l => l.name !== 'Unnamed client')
+    ?.filter(l => l.name?.trim() && l.name !== 'Unnamed client')
     .slice(0, 5)
     .map(l => l.email ? `${l.name} (${l.email})` : l.name) ?? [];
 
@@ -417,7 +417,8 @@ export async function runAnalyst(
   });
 
   if (!response.ok) {
-    throw new Error(`Analyst (Sonnet) error: ${response.status} ${response.statusText}`);
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`Analyst (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
   }
 
   const result = await response.json() as { content: Array<{ type: string; text: string }> };
@@ -429,8 +430,4 @@ export async function runAnalyst(
     const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     const match = stripped.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No JSON object found in response');
-    return JSON.parse(match[0]) as AnalystOutput;
-  } catch {
-    throw new Error(`Analyst returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+    return JSON.parse(m

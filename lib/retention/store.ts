@@ -13,24 +13,28 @@ import { MongoClient, type Db, type Collection } from 'mongodb';
 import type { FetchedData, AnalystOutput, RetentionBrief, GapAuditResult } from './types';
 
 // ── Connection pooling ────────────────────────────────────────────────────────
-let client: MongoClient | null = null;
-let dbInstance: Db | null = null;
+// Promise singleton prevents concurrent cold-start requests from each creating
+// their own MongoClient — all callers await the same in-flight connection promise.
+let connectionPromise: Promise<Db> | null = null;
 
-async function getDb(): Promise<Db> {
-  if (dbInstance) return dbInstance;
-
+async function connect(): Promise<Db> {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI env var is not set');
 
-  client = new MongoClient(uri, {
+  const client = new MongoClient(uri, {
     serverSelectionTimeoutMS: 5000,
     connectTimeoutMS: 10000,
   });
 
   await client.connect();
-  dbInstance = client.db('tsi_client_intelligence');
-  await ensureIndexes(dbInstance);
-  return dbInstance;
+  const db = client.db('tsi_client_intelligence');
+  await ensureIndexes(db);
+  return db;
+}
+
+function getDb(): Promise<Db> {
+  if (!connectionPromise) connectionPromise = connect();
+  return connectionPromise;
 }
 
 async function ensureIndexes(db: Db): Promise<void> {
@@ -121,7 +125,7 @@ export async function getRetentionHistory(
     .find({ gpid })
     .sort({ triggeredAt: -1 })
     .limit(limit)
-    .toArray() as unknown as RetentionEventDoc[];
+    .toArray() as RetentionEventDoc[];
 }
 
 // Returns true if a Freshdesk note has already been posted for this ticket ID.
@@ -143,10 +147,4 @@ export async function getRecentRetentionEvent(
   const db = await getDb();
   const cutoff = new Date(Date.now() - dedupWindowDays * 24 * 60 * 60 * 1000).toISOString();
   const result = await db
-    .collection<RetentionEventDoc>('retention_events')
-    .findOne(
-      { gpid, triggeredAt: { $gte: cutoff } },
-      { sort: { triggeredAt: -1 } }
-    );
-  return result as RetentionEventDoc | null;
-}
+  

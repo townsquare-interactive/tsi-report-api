@@ -150,29 +150,27 @@ async function handleRetention(request: NextRequest) {
     }
   }
 
-  // ── Agent 1: Fetch all platform data ──────────────────────────────────────
-  lap('start → fetcher');
-  let rawData;
-  try {
-    rawData = await fetchClientData(gpid, days);
-  } catch (err) {
+  // ── Agent 1 + Freshdesk conversations — run in parallel ───────────────────
+  // fetchClientData (Agent 1) and getTicketConversations both only need data already
+  // parsed above (gpid and freshdeskTicketId), so they can run concurrently.
+  // Conversations fall back to null silently — never fatal.
+  lap('start → fetcher + freshdesk conversations (parallel)');
+  const [fetcherResult, conversationsResult] = await Promise.allSettled([
+    fetchClientData(gpid, days),
+    (freshdeskTicketId && request.method === 'POST')
+      ? getTicketConversations(freshdeskTicketId).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  if (fetcherResult.status === 'rejected') {
     return NextResponse.json(
-      { error: `Data fetch failed: ${err instanceof Error ? err.message : String(err)}` },
+      { error: `Data fetch failed: ${fetcherResult.reason instanceof Error ? fetcherResult.reason.message : String(fetcherResult.reason)}` },
       { status: 502 }
     );
   }
-
-  // ── Freshdesk conversation enrichment ─────────────────────────────────────
-  // Fetch the first 5 conversation entries from the cancel ticket (async, non-blocking).
-  // This gives the analyst the actual human context — client replies, agent notes —
-  // beyond the auto-generated description_text that fires at ticket creation.
-  // Falls back to null silently — never blocks the pipeline.
-  lap('fetcher done');
-  let ticketConversations: string | null = null;
-  if (freshdeskTicketId && request.method === 'POST') {
-    ticketConversations = await getTicketConversations(freshdeskTicketId).catch(() => null);
-  }
-  lap('freshdesk conversation fetch done');
+  const rawData = fetcherResult.value;
+  const ticketConversations = conversationsResult.status === 'fulfilled' ? conversationsResult.value : null;
+  lap('fetcher + freshdesk conversations done');
 
   // Build enriched context string for the analyst.
   // Combines the webhook description_text with live conversation entries.
@@ -304,7 +302,7 @@ async function handleRetention(request: NextRequest) {
         pipeline: [
           'fetcher (no-model)',
           'analyst (sonnet) + gap-auditor (sonnet) [parallel]',
-          'formatter (haiku)',
+          'formatter (sonnet)',
           freshdeskWriteEnabled && freshdeskTicketId ? 'note-writer (haiku) → freshdesk' : 'note-writer DISABLED (set FRESHDESK_WRITE_ENABLED=true to enable)',
         ],
         storedEventId: mongoId,
@@ -325,3 +323,4 @@ async function handleRetention(request: NextRequest) {
     { headers: { 'Cache-Control': 'no-store', 'Content-Type': 'application/json' } }
   );
 }
+                                                    

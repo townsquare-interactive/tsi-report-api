@@ -9,7 +9,7 @@ export type FetchedData = ReportData;
 // Raw reasoning from Sonnet — what IS the retention case for this client?
 // Intentionally verbose so the formatter has everything it needs.
 export interface RetentionInsight {
-  section: 'website' | 'pipeline' | 'listings' | 'gbp' | 'reputation';
+  section: 'website' | 'pipeline' | 'listings' | 'gbp' | 'reputation' | 'social';
   coreArgument: string;       // 1-2 sentences: the fundamental "you'd lose X" argument
   keyDataPoints: string[];    // specific numbers/stats from the raw data
   urgencyLevel: 'high' | 'medium' | 'low';
@@ -176,5 +176,4 @@ export interface GapAuditResult {
   // Ranked by severity — top items for the CSR to address
   prioritizedGaps: PrioritizedGap[];
   // The single most important gap or risk, in one sentence
-  topGap: string;
-}
+  topGap:

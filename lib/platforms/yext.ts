@@ -42,7 +42,7 @@ export async function getYextData(gpid: string, periodDays = 90): Promise<YextLi
   // Get entity ID for this sub-account
   const entitiesRes = await fetch(
     `${YEXT_BASE}/accounts/${accountId}/entities?${params}&entityTypes=location&limit=1`,
-    { headers: { 'Content-Type': 'application/json' } }
+    { signal: AbortSignal.timeout(10_000), headers: { 'Content-Type': 'application/json' } }
   );
 
   if (!entitiesRes.ok) {
@@ -75,11 +75,12 @@ export async function getYextData(gpid: string, periodDays = 90): Promise<YextLi
   const [listingsRes, analyticsRes, actionBreakdownRes] = await Promise.all([
     fetch(
       `${YEXT_BASE}/accounts/${accountId}/powerlistings/listings?${params}&locationIds=${locationId}`,
-      { headers: { 'Content-Type': 'application/json' } }
+      { signal: AbortSignal.timeout(10_000), headers: { 'Content-Type': 'application/json' } }
     ),
     fetch(
       `${YEXT_BASE}/accounts/${accountId}/analytics/reports?${params}`,
       {
+        signal: AbortSignal.timeout(10_000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -92,6 +93,7 @@ export async function getYextData(gpid: string, periodDays = 90): Promise<YextLi
     fetch(
       `${YEXT_BASE}/accounts/${accountId}/analytics/reports?${params}`,
       {
+        signal: AbortSignal.timeout(10_000),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -148,15 +150,3 @@ export async function getYextData(gpid: string, periodDays = 90): Promise<YextLi
       };
     }
   }
-
-  return {
-    locationId,
-    syncedListings,
-    totalListings,
-    averageScore: null,
-    impressions,
-    actions,
-    accuracy,
-    actionBreakdown,
-  };
-}

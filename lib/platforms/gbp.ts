@@ -15,6 +15,7 @@ async function getAccessToken(): Promise<string> {
   const creds = await getGbpCredentials();
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
+    signal: AbortSignal.timeout(8_000),
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
       client_id: creds.clientId,
@@ -47,7 +48,7 @@ async function getDailyMetric(
 
   const res = await fetch(
     `${GBP_PERF_BASE}/${locationId}:getDailyMetricsTimeSeries?${params}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
+    { signal: AbortSignal.timeout(10_000), headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   if (!res.ok) return 0;
@@ -81,7 +82,7 @@ async function getGbpSearchKeywords(
 
     const res = await fetch(
       `${GBP_PERF_BASE}/${locationId}/searchkeywords/impressions/monthly?${params}`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { signal: AbortSignal.timeout(10_000), headers: { Authorization: `Bearer ${accessToken}` } }
     );
 
     if (!res.ok) return [];
@@ -150,7 +151,7 @@ export async function getGbpPostsLive(locationId: string, accessToken?: string):
   const token = accessToken ?? await getAccessToken();
   const res = await fetch(
     `${GBP_MY_BUSINESS}/accounts/me/${locationId}/localPosts?pageSize=20`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    { signal: AbortSignal.timeout(10_000), headers: { Authorization: `Bearer ${token}` } }
   );
   if (!res.ok) return 0;
   const data = await res.json() as { localPosts?: Array<{ state?: string }> };
@@ -163,7 +164,7 @@ export async function getGbpReviews(locationId: string): Promise<GbpReview[]> {
   // locationId format: "locations/123..." — derive account path for v4 API
   const res = await fetch(
     `${GBP_MY_BUSINESS}/accounts/me/${locationId}/reviews?pageSize=10`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
+    { signal: AbortSignal.timeout(10_000), headers: { Authorization: `Bearer ${accessToken}` } }
   );
 
   if (!res.ok) return [];
@@ -180,11 +181,4 @@ export async function getGbpReviews(locationId: string): Promise<GbpReview[]> {
   };
 
   return (data.reviews ?? []).map((r) => ({
-    reviewId: r.reviewId,
-    rating: r.starRating,
-    comment: r.comment ?? null,
-    reviewer: r.reviewer?.displayName ?? 'Anonymous',
-    createTime: r.createTime,
-    hasReply: !!r.reviewReply,
-  }));
-}
+    reviewId: r.revi

@@ -419,7 +419,8 @@ export async function runFormatter(
   });
 
   if (!response.ok) {
-    throw new Error(`Formatter (Sonnet) error: ${response.status} ${response.statusText}`);
+    const errBody = await response.text().catch(() => '');
+    throw new Error(`Formatter (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
   }
 
   const result = await response.json() as { content: Array<{ type: string; text: string }> };
@@ -431,8 +432,4 @@ export async function runFormatter(
     const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
     const match = stripped.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('No JSON in formatter response');
-    return JSON.parse(match[0]) as RetentionBrief;
-  } catch {
-    throw new Error(`Formatter returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+    return JSON.parse(match[0]) as Retention

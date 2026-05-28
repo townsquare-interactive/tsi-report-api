@@ -56,12 +56,13 @@ export async function getDudaData(
   const to = endDate.toISOString().split('T')[0];
 
   // Fetch all data in parallel
+  const opts = { signal: AbortSignal.timeout(10_000), headers };
   const [siteRes, statsRes, blogRes, pagesRes, activitiesRes] = await Promise.all([
-    fetch(`${baseUrl}/api/sites/multiscreen/${encodeURIComponent(siteName)}`, { headers }),
-    fetch(`${baseUrl}/api/analytics/site/${encodeURIComponent(siteName)}?from=${from}&to=${to}`, { headers }),
-    fetch(`${baseUrl}/api/sites/multiscreen/blog/${encodeURIComponent(siteName)}/post`, { headers }),
-    fetch(`${baseUrl}/api/sites/multiscreen/${encodeURIComponent(siteName)}/pages`, { headers }),
-    fetch(`${baseUrl}/api/sites/multiscreen/${encodeURIComponent(siteName)}/activity?limit=50`, { headers }),
+    fetch(`${baseUrl}/api/sites/multiscreen/${encodeURIComponent(siteName)}`, opts),
+    fetch(`${baseUrl}/api/analytics/site/${encodeURIComponent(siteName)}?from=${from}&to=${to}`, opts),
+    fetch(`${baseUrl}/api/sites/multiscreen/blog/${encodeURIComponent(siteName)}/post`, opts),
+    fetch(`${baseUrl}/api/sites/multiscreen/${encodeURIComponent(siteName)}/pages`, opts),
+    fetch(`${baseUrl}/api/sites/multiscreen/${encodeURIComponent(siteName)}/activity?limit=50`, opts),
   ]);
 
   let site: DudaSiteDetails | null = null;
@@ -130,7 +131,4 @@ export async function getDudaData(
     periodStart: from,
     periodEnd: to,
     totalPages: pages.length,
-    publishedPosts,
-    siteUpdates,
-  };
-}
+    publishedP

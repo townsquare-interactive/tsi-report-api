@@ -226,7 +226,8 @@ export async function writeRetentionNote(
   });
 
   if (!aiResponse.ok) {
-    throw new Error(`Note writer (Haiku) error: ${aiResponse.status} ${aiResponse.statusText}`);
+    const errBody = await aiResponse.text().catch(() => '');
+    throw new Error(`Note writer (Haiku) error: ${aiResponse.status} ${aiResponse.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
   }
 
   const aiResult = await aiResponse.json() as { content: Array<{ type: string; text: string }> };
@@ -256,20 +257,4 @@ export async function writeRetentionNote(
     },
     body: JSON.stringify({
       body: fullNoteHtml,
-      private: true,  // internal note — not visible to client
-    }),
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!fdResponse.ok) {
-    const errText = await fdResponse.text();
-    throw new Error(`Freshdesk note POST failed: ${fdResponse.status} — ${errText.slice(0, 200)}`);
-  }
-
-  const fdResult = await fdResponse.json() as { id: number };
-  return {
-    noteId: fdResult.id,
-    noteUrl: `https://${domain}/helpdesk/tickets/${ticketId}`,
-  };
-}
-
+      private: true,  // internal note — no
