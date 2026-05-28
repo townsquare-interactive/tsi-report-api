@@ -150,4 +150,7 @@ export async function getRecentRetentionEvent(
   const result = await db
     .collection<RetentionEventDoc>('retention_events')
     .findOne(
-      { gpid, triggeredAt: {
+      { gpid, triggeredAt: { $gte: cutoff } },
+      { sort: { triggeredAt: -1 } }
+    );
+  return result as RetentionEventDoc | null;

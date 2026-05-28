@@ -321,4 +321,6 @@ async function handleRetention(request: NextRequest) {
       gapAudit,
       errors: Object.keys(agentErrors).length > 0 ? agentErrors : undefined,
     },
-    { headers: { 'Cache-Control': 'no-s
+    { headers: { 'Cache-Control': 'no-store', 'Content-Type': 'application/json' } }
+  );
+}

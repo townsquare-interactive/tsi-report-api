@@ -127,4 +127,19 @@ export async function getDudaData(
   const pageInventory: DudaPage[] = pages.map(p => ({
     title: p.title ?? '',
     path: p.path ?? p.page_url?.replace(/^https?:\/\/[^/]+/, '') ?? '',
-  })).filter(p
+  })).filter(p => p.title || p.path);
+
+  return {
+    siteAlias: site?.site_domain ?? siteName,
+    lastPublished: site?.last_published_date ?? null,
+    pageViews: stats.PAGE_VIEWS ?? 0,
+    uniqueVisitors: stats.VISITORS ?? 0,
+    visits: stats.VISITS ?? 0,
+    periodStart: from,
+    periodEnd: to,
+    totalPages: pages.length,
+    pages: pageInventory,
+    publishedPosts,
+    siteUpdates,
+  };
+}
