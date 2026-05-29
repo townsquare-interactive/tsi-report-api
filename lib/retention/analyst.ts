@@ -498,7 +498,10 @@ Rules:
 - opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in the actual data.
 - lossAssets: 3–6 items, ordered by timing (Day 1 first). Use actual numbers from their data where possible.
 - insights: only for subscribed products (${insightSections.join(', ')}). Use real numbers. Reserve high urgency for genuine gaps.
-- Return only the JSON object.`;
+- Return only the JSON object.
+
+**CRITICAL — OUTPUT FORMAT:**
+Your ENTIRE response must be a single valid JSON object. Start with \`{\` and end with \`}\`. Do NOT write any reasoning, preamble, or text before or after the JSON. The reasoning questions above are for your internal analysis only — they must NOT appear in your output. Any text outside the JSON object will break the pipeline.\`;
 }
 
 export async function runAnalyst(
@@ -533,12 +536,24 @@ export async function runAnalyst(
   if (!text) throw new Error('Empty response from analyst');
 
   try {
-    // Strip markdown code fences if present, then extract { ... } block
+    // Strip markdown code fences if present
     const stripped = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const match = stripped.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error('No JSON object found in response');
-    return JSON.parse(match[0]) as AnalystOutput;
-  } catch {
+    // Brace-match from the last } backwards to find the outermost JSON object.
+    // This handles cases where the model outputs reasoning text before the JSON.
+    const lastBrace = stripped.lastIndexOf('}');
+    if (lastBrace !== -1) {
+      let depth = 0;
+      let start = -1;
+      for (let i = lastBrace; i >= 0; i--) {
+        if (stripped[i] === '}') depth++;
+        else if (stripped[i] === '{') { depth--; if (depth === 0) { start = i; break; } }
+      }
+      if (start !== -1) {
+        return JSON.parse(stripped.slice(start, lastBrace + 1)) as AnalystOutput;
+      }
+    }
+    throw new Error('No JSON object found in analyst response');
+  } catch (e) {
     throw new Error(`Analyst returned unparseable JSON: ${text.slice(0, 300)}`);
   }
 }
