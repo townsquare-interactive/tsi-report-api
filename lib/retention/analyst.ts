@@ -501,7 +501,7 @@ Rules:
 - Return only the JSON object.
 
 **CRITICAL — OUTPUT FORMAT:**
-Your ENTIRE response must be a single valid JSON object. Start with \`{\` and end with \`}\`. Do NOT write any reasoning, preamble, or text before or after the JSON. The reasoning questions above are for your internal analysis only — they must NOT appear in your output. Any text outside the JSON object will break the pipeline.\`;
+Your ENTIRE response must be a single valid JSON object. Start with \`{\` and end with \`}\`. Do NOT write any reasoning, preamble, or text before or after the JSON. The reasoning questions above are for your internal analysis only — they must NOT appear in your output. Any text outside the JSON object will break the pipeline.`;
 }
 
 export async function runAnalyst(
