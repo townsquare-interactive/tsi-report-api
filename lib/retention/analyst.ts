@@ -510,7 +510,7 @@ export async function runAnalyst(
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap — fail fast, don't hang the pipeline
+    signal: AbortSignal.timeout(200_000), // 3.3-min hard cap — increased after prompt expansion in session 2
     headers: {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
