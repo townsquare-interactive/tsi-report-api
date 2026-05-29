@@ -284,4 +284,40 @@ export interface SociPeakHour {
 
 export interface SociDemographics {
   women: { total: number; byAge: Record<string, number> };
-  men:   { total: number; byAge: Record<
+  men:   { total: number; byAge: Record<string, number> };
+}
+
+export interface SociData {
+  projectId: string;
+  fbNetworkId: string | null;
+  upcomingPostCount: number;
+  recentlySentCount: number;
+  scheduledNetworks: string[];
+  upcomingPosts: SociPost[];
+  pageMetrics: SociPageMetrics | null;
+  fbInsights: SociFbInsights | null;
+  topPosts: SociTopPost[];
+  sentiment: SociSentiment | null;
+  peakHours: SociPeakHour[];
+  demographics: SociDemographics | null;
+  reviewCounts: Record<string, number>;
+  periodStart: string;
+  periodEnd: string;
+}
+
+export interface ReportData {
+  meta: {
+    clientId: string;
+    generatedAt: string;
+    periodDays: number;
+  };
+  client: FalconClient;
+  gbp: GbpInsights | null;
+  gbpReviews: GbpReview[];
+  duda: DudaSiteStats | null;
+  yext: YextListingsData | null;
+  vcita: VcitaData | null;
+  activities: ActivityData | null;
+  soci: SociData | null;
+  errors: Record<string, string>;
+}
