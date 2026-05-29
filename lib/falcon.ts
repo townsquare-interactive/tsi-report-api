@@ -15,6 +15,10 @@ const CLIENT_QUERY = `
       name
       status
       tsiMarket
+      gccDate
+      business {
+        vertical
+      }
       externalServiceIds {
         id
         name
@@ -42,6 +46,11 @@ const CLIENT_QUERY = `
             cancelStatus
             reason
             notes
+            competitor
+            saveSolutions
+            savedBy
+            savedAt
+            cancelCreatedDate
           }
         }
       }
@@ -77,6 +86,7 @@ const CLIENT_QUERY = `
         ... on Ticket {
           id
           subject
+          body
           ticketType: type
           ticketStatus: status
           createdAt
@@ -101,6 +111,11 @@ const CLIENT_QUERY = `
           cancelStatus
           reason
           pendingCancelDate
+          competitor
+          saveSolutions
+          savedBy
+          savedAt
+          lifecycleAction
         }
       }
     }
@@ -135,6 +150,7 @@ interface RawTicket {
   __typename: 'Ticket';
   id: string;
   subject: string;
+  body: string | null;
   ticketType: string | null;
   ticketStatus: string;
   createdAt: string;
@@ -165,6 +181,11 @@ interface RawCancellationLifecycleItem {
   cancelStatus: string | null;
   reason: string | null;
   pendingCancelDate: string | null;
+  competitor: string | null;
+  saveSolutions: string | null;
+  savedBy: string | null;
+  savedAt: string | null;
+  lifecycleAction: string | null;
 }
 
 type RawActivity = RawTicket | RawInteraction | RawBillingHistoryItem | RawCancellationLifecycleItem | { __typename: string };
@@ -174,6 +195,8 @@ interface RawFalconClient {
   name: string;
   status: string;
   tsiMarket: string;
+  gccDate: string | null;
+  business: { vertical: string | null } | null;
   externalServiceIds: RawExternalService[];
   activities: RawActivity[];
   clientServicingInformation: RawClientServicingInformation | null;
@@ -202,6 +225,11 @@ interface RawFalconClient {
         cancelStatus: string | null;
         reason: string | null;
         notes: string | null;
+        competitor: string | null;
+        saveSolutions: string | null;
+        savedBy: string | null;
+        savedAt: string | null;
+        cancelCreatedDate: string | null;
       } | null;
     } | null;
   } | null;
@@ -256,6 +284,7 @@ function buildActivityData(activities: RawActivity[], periodDays: number): Activ
   const recentTickets = ticketsInPeriod.slice(0, 5).map((t) => ({
     id: t.id,
     subject: t.subject,
+    body: t.body ?? null,
     type: t.ticketType,
     status: t.ticketStatus,
     createdAt: t.createdAt,
@@ -321,7 +350,6 @@ export async function getClientById(
     }));
 
   // Extract cancellation lifecycle history — all events, not period-filtered
-  // Extract cancellation lifecycle history — all events, not period-filtered
   const cancellationHistory: FalconCancellationEvent[] = (raw.activities ?? [])
     .filter((a): a is RawCancellationLifecycleItem => a.__typename === 'CancellationLifecycleItem')
     .map((c) => ({
@@ -330,6 +358,11 @@ export async function getClientById(
       cancelStatus: c.cancelStatus,
       reason: c.reason,
       pendingCancelDate: c.pendingCancelDate,
+      competitor: c.competitor || null,
+      saveSolutions: c.saveSolutions || null,
+      savedBy: c.savedBy || null,
+      savedAt: c.savedAt || null,
+      lifecycleAction: c.lifecycleAction || null,
     }));
 
   // Extract servicing info — LAC (lastAttemptedContact) and LCR (responded)
@@ -351,6 +384,19 @@ export async function getClientById(
     lastPageType: raw.contentGenActivity.lastPageType ?? null,
   } : null;
 
+  // Enrich scheduledCancellation with competitor + saveSolutions fields
+  const rawSchedCancel = raw.subscription?.information?.scheduledCancellation ?? null;
+  const scheduledCancellation = rawSchedCancel ? {
+    pendingCancelDate: rawSchedCancel.pendingCancelDate,
+    cancellationDate: rawSchedCancel.cancellationDate,
+    requestDate: rawSchedCancel.requestDate,
+    cancelStatus: rawSchedCancel.cancelStatus,
+    reason: rawSchedCancel.reason,
+    notes: rawSchedCancel.notes,
+    competitor: rawSchedCancel.competitor || null,
+    saveSolutions: rawSchedCancel.saveSolutions || null,
+  } : null;
+
   const client: FalconClient = {
     id: raw.id,
     name: raw.name,
@@ -358,6 +404,9 @@ export async function getClientById(
     tsiMarket: raw.tsiMarket,
     price: raw.subscription?.information?.cost ?? null,
     gpPaymentStatus: null,
+    paymentStatus: raw.billing?.paymentStatus ?? null,
+    vertical: raw.business?.vertical ?? null,
+    gccDate: raw.gccDate ?? null,
     gpid: extMap.get('finance') ?? null,
     freshdeskId: extMap.get('ticketing') ?? null,
     vcitaId: vcitaEntry?.name ?? null,
@@ -366,7 +415,6 @@ export async function getClientById(
     servicing,
     contentGenActivity,
     latestSaveEvent: raw.retention?.latestSaveEvent ?? null,
-    paymentStatus: raw.billing?.paymentStatus ?? null,
     subscription: raw.subscription?.information
       ? {
           id: raw.subscription.id,
@@ -377,7 +425,7 @@ export async function getClientById(
           cost: raw.subscription.information.cost,
           serviceKeys: raw.subscription.information.serviceKeys ?? [],
           commitmentTerms: raw.subscription.information.commitmentTerms ?? null,
-          scheduledCancellation: raw.subscription.information.scheduledCancellation ?? null,
+          scheduledCancellation,
         }
       : null,
   };
