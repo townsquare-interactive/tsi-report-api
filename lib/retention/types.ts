@@ -43,6 +43,13 @@ export interface AnalystOutput {
   tenureMonths: number;
   monthlyPrice: number;       // monthly subscription price — pass-through for free month cap check in formatter
   serviceKeys: string[];      // pass-through for formatter
+  // Pre-computed pitch frame — governs how Section 1 must open
+  pitchFrame: 'billing_first' | 'competitive_defense' | 'service_gap_own_and_fix' | 'value_proof' | 'urgency_window' | 'relationship_save';
+  // Pre-computed contact story — prevents client avoidance from being misread as a TSI service gap
+  contactStoryInterpretation: 'client_avoidance' | 'tsi_gap' | 'healthy' | 'unknown';
+  competitors: string[];
+  urgencyFlag: boolean;
+  cancellationType: string;
 }
 
 // ── Agent 3: Formatter output ────────────────────────────────────────────────

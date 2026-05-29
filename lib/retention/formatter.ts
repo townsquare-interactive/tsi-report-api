@@ -237,6 +237,8 @@ function buildFormatterPrompt(
   eligibility: ReturnType<typeof computeFinancialEligibility>,
   pipelineAtRiskOverride: number
 ): string {
+  const pitchFrame = analyst.pitchFrame ?? 'value_proof';
+  const contactStory = analyst.contactStoryInterpretation ?? 'unknown';
   const tsiServiceNote = gapAudit?.tsiServiceGap
     ? `TSI SERVICE ALERT: ${gapAudit.dimensions.service?.narrative ?? 'TSI service gaps exist — review before calling.'}`
     : null;
@@ -262,6 +264,48 @@ Section 3 — financial offers are still last resort, but frame them as "here's 
 BREVITY REQUIREMENT: Scripts and descriptions must be SHORT. An agent is on a live call with one eye on their notes. Every field should be scannable in 5 seconds. Agent scripts: 2 sentences max. Commitments: 1 sentence each. Loss timeline items: 1 sentence each. emailVersion: 3 sentences max. This is a reference card, not a narrative.
 
 PIPELINE AT RISK — DISPLAY RULE: If pipelineAtRisk is between $0 and $49, do NOT display it as "$1" or any suspiciously low figure. Instead, frame the pipeline argument as the client's annual value to their own business: monthly price × 12 = annual subscription value they're trading away. Example: "At $X/month, you're walking away from $Y/year in digital marketing investment."
+
+TWO REGISTERS — THIS IS THE MOST IMPORTANT INSTRUCTION:
+You are writing two fundamentally different types of content in this brief. They have OPPOSITE rules.
+
+REGISTER 1 — INTERNAL (what the agent reads BEFORE dialing, client NEVER sees this):
+  • agentBrief.clientSnapshot, agentBrief.cancelReasonRead, agentBrief.leadWith
+  • agentBrief.verticalNote, agentBrief.tsiServiceNote
+  These CAN be honest about TSI gaps, LCR data, service issues, what went wrong.
+  The agent needs context. Write these plainly and accurately.
+
+REGISTER 2 — CLIENT-FACING (what the agent says ON THE PHONE):
+  • section1.agentScript, section2.agentScript, section3.agentScript
+  • section1.headline, section2.headline
+  THE CLIENT NEVER HEARS ABOUT TSI'S INTERNAL ASSESSMENT. Zero exceptions.
+  Write these as if TSI has a confident, prepared agent who knows exactly what value they deliver.
+  ZERO TSI failure language. ZERO apologies. ZERO references to what TSI "hasn't done."
+  Every script must be: specific number → forward-looking commitment → yes/no question.
+
+PITCH FRAME — MUST FOLLOW BASED ON ANALYST OUTPUT:
+The analyst has set pitchFrame = "${pitchFrame}". This governs how Section 1 opens:
+
+${pitchFrame === 'billing_first' ? `BILLING FIRST: This client's cancel is rooted in a payment failure.
+  - Section 1 agentScript MUST open with payment resolution BEFORE any value pitch:
+    "Before we talk about the platform — let's make sure we can keep the account active. Our billing team can work with you on the payment situation. Can we start there?"
+  - Commitment #1 in section1 MUST be "Billing Resolution" — resolve the payment issue first.
+  - Only after billing framing pivot to value.` : ''}${pitchFrame === 'relationship_save' ? `RELATIONSHIP SAVE: TSI has been calling — the client hasn't been responding. This is client avoidance, NOT a TSI failure.
+  - Section 1 should open: "I'm glad we finally connected — I've been trying to reach you."
+  - Frame it as TSI being persistent in trying to deliver value, not as TSI failing to call.
+  - Lead with what TSI has been doing and what's waiting for them.` : ''}${pitchFrame === 'service_gap_own_and_fix' ? `SERVICE GAP OWN AND FIX: TSI has a genuine execution gap on this account.
+  - Section 1 agentScript: ONE sentence acknowledging the specific gap, then immediately pivot to the specific commitment. No extended apology. Example: "We haven't kept your GBP active — I'm fixing that this week with [specific action]."
+  - The commitment must be concrete and happen within 7 days.` : ''}${pitchFrame === 'competitive_defense' ? `COMPETITIVE DEFENSE: Client is considering or switching to a named competitor.
+  - Don't attack the competitor by name in any client-facing script.
+  - Frame S1 around differentiation: what TSI offers that generic alternatives don't provide.
+  - Emphasize integrated platform, dedicated account management, established local authority.` : ''}${pitchFrame === 'urgency_window' ? `URGENCY WINDOW: Cancel date is within 7 days.
+  - Open S1 with time awareness: "I'm reaching out because your account closes [date] — I want to make sure you've seen everything before that happens."
+  - Value argument still leads — urgency sets the frame, brief delivers the case.` : ''}
+
+MEA CULPA SCAN — MANDATORY: Before finalizing section1.agentScript and section2.agentScript, check every sentence for these patterns:
+"we haven't" / "we failed" / "we didn't" / "that's on us" / "we dropped" / "we should have" / "we never" / "never activated" / "we apologize" / "we let you down"
+If ANY appear in client-facing scripts — REWRITE. Replace with forward-looking commitments.
+WRONG: "We haven't published content in 45 days."  RIGHT: "We're publishing 2 new pages this week."
+WRONG: "We dropped the ball on your GBP."  RIGHT: "We're doing a full GBP audit and posting this week."
 
 S2 SPEAKING CONSTRAINT — CRITICAL: Every sentence in agentScript (Section 2) must be speakable in a single breath. No sentence should contain more than 15 words. No compound clauses strung together with "and" or "while" or "as." The agent is reading off a screen on a live call. If a sentence has more than one comma, it's too long — break it into two. Test every sentence: can you say it naturally without stopping? If not, rewrite it.
 

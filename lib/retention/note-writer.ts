@@ -113,6 +113,10 @@ function buildNotePrompt(
 
   return `You are writing a SCANNABLE internal Freshdesk note for a CSR who will dial this client in the next 60 seconds. Write clean HTML using ONLY: <b>, <br>, <ul>, <li>, <hr>. No paragraphs. No narration. Bullets only.
 
+TWO REGISTERS — CRITICAL:
+The "Before you dial" section (Snapshot, Cancel read, Lead with, Context, TSI, Notable bullets) is INTERNAL — the agent reads it privately. You MAY include honest TSI context here, including service gaps, LCR issues, and data limitations.
+The Section 1 and Section 2 scripts are SPOKEN TO THE CLIENT. NEVER include TSI failure language, apologies, or "we haven't done X" in scripts. Scripts must be forward-looking, confident, and specific.
+
 PRODUCT NAMING — CRITICAL: Never use vendor names. Always use TSI product names: "BMP" or "Growth Management" (not vcita), "Directories" (not Yext), "Website" (not Duda). GBP / Google Business Profile is fine.
 
 BREVITY RULES:
@@ -133,7 +137,7 @@ Client: ${clientName}
 Tenure: ${brief.tenureMonths} months | ${atRisk.label}: ${atRisk.value}
 Products: ${productsLine || 'Unknown'}
 Agent notes: ${agentNotes || 'None'}
-${tsiServiceGapNote}
+${tsiServiceGapNote ? `INTERNAL CONTEXT (for Before You Dial bullets only — NEVER put in scripts): ${tsiServiceGapNote}` : ''}
 
 Brief data (pull the actual content from here — do not paraphrase):
 ${JSON.stringify({
@@ -149,14 +153,14 @@ Write this EXACT HTML structure — fill every bracketed item with real content 
 <b>🔴 ${clientName.toUpperCase()} — RETENTION BRIEF</b><br>
 <b>Tenure:</b> ${brief.tenureMonths}mo &nbsp;|&nbsp; <b>${atRisk.label}:</b> ${atRisk.value}<br>
 <b>Products:</b> ${productsLine}<br>
-${gapAudit?.tsiServiceGap ? `<b>⚠️ TSI SERVICE GAP — ${gapAudit.topGap}</b><br>` : ''}<hr>
+<hr>
 ${brief.agentBrief?.contractNote ? `<b>${brief.agentBrief.contractNote}</b><br>` : ''}<b>📋 Before you dial:</b>
 <ul>
 <li><b>Snapshot:</b> [1-bullet clientSnapshot — max 15 words]</li>
 <li><b>Cancel read:</b> [1-bullet cancelReasonRead — max 12 words]</li>
 <li><b>Lead with:</b> [1-bullet leadWith — the hook, max 15 words]</li>
 <li><b>Context:</b> [1-bullet verticalNote — max 15 words]</li>
-${brief.agentBrief?.tsiServiceNote ? '<li><b>⚠️ TSI:</b> [brief.agentBrief.tsiServiceNote — 1 line]</li>' : ''}
+${brief.agentBrief?.tsiServiceNote || gapAudit?.tsiServiceGap ? `<li><b>⚠️ TSI:</b> [brief.agentBrief.tsiServiceNote or gapAudit topGap — 1 line max, internal context only, never in scripts]</li>` : ''}
 [If anything is genuinely notable from the data — strong GBP metrics, high review count, significant lead volume, or a major gap — add 1-2 <li><b>Notable:</b> [finding — max 20 words]</li> bullets here. Skip entirely if nothing stands out.]
 </ul><hr>
 <b>Section 1 — Opportunity</b><br>

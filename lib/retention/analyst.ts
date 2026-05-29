@@ -117,6 +117,81 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     || scheduledCancellation?.pendingCancelDate
     || null;
 
+  // ── Pre-computed interpretations: prevent the model from misreading data signals ──
+
+  // Contact story: distinguish client avoidance from TSI service gap
+  // The model frequently misreads high LCR (client not responding) as a TSI failure
+  // We pre-compute this so the model has the correct interpretation injected as fact
+  const lacDate = client.servicing?.lastAttemptedContact ?? null;
+  const lcrDate = client.servicing?.responded ?? null;
+  const daysSinceLACPrecomputed = lacDate
+    ? Math.floor((Date.now() - new Date(lacDate).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const daysSinceLCRPrecomputed = lcrDate
+    ? Math.floor((Date.now() - new Date(lcrDate).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  let contactStoryInterpretation: 'client_avoidance' | 'tsi_gap' | 'healthy' | 'unknown' = 'unknown';
+  let contactStoryExplanation = 'No contact data available.';
+  if (daysSinceLACPrecomputed !== null) {
+    if (daysSinceLACPrecomputed <= 30 && (daysSinceLCRPrecomputed === null || daysSinceLCRPrecomputed >= 120)) {
+      contactStoryInterpretation = 'client_avoidance';
+      contactStoryExplanation = `TSI attempted contact ${daysSinceLACPrecomputed} days ago. Client last responded ${daysSinceLCRPrecomputed ?? 'never recorded'} days ago. TSI IS calling — the client is not answering. This is CLIENT AVOIDANCE, not a TSI service failure. Do not frame this as TSI dropping the ball.`;
+    } else if (daysSinceLACPrecomputed > 45) {
+      contactStoryInterpretation = 'tsi_gap';
+      contactStoryExplanation = `TSI's last contact attempt was ${daysSinceLACPrecomputed} days ago. This IS a TSI service gap — outreach cadence is insufficient.`;
+    } else {
+      contactStoryInterpretation = 'healthy';
+      contactStoryExplanation = `TSI contacted ${daysSinceLACPrecomputed} days ago. Contact cadence is adequate.`;
+    }
+  }
+
+  // Website publish interpretation: prevent UNPUBLISHED from being read as "never published"
+  // When a client cancels, TSI unpublishes the site — so UNPUBLISHED ≠ setup failure
+  const dudaLastPublishedDays = duda?.lastPublished
+    ? Math.floor((Date.now() - new Date(duda.lastPublished).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  let websitePublishInterpretation = 'no_data';
+  if (duda) {
+    if (dudaLastPublishedDays !== null && dudaLastPublishedDays <= 60) {
+      websitePublishInterpretation = `RECENTLY_ACTIVE: Site was published ${dudaLastPublishedDays} days ago. The current inactive status is likely a post-cancellation artifact. DO NOT treat as a setup failure or say the site was never live. The site built ${tenureMonths} months of SEO equity.`;
+    } else if (dudaLastPublishedDays !== null && dudaLastPublishedDays <= 180) {
+      websitePublishInterpretation = `STALE: Last published ${dudaLastPublishedDays} days ago. Content cadence gap — not a structural setup failure.`;
+    } else if ((duda.visits ?? 0) > 0 || (duda.pageViews ?? 0) > 0) {
+      websitePublishInterpretation = `HAS_TRAFFIC: Site shows traffic (${duda.visits} visits, ${duda.pageViews} page views) so it was live. Do not conclude it was never published.`;
+    } else if (dudaLastPublishedDays === null && tenureMonths <= 3) {
+      websitePublishInterpretation = `POSSIBLY_NOT_PUBLISHED: No publish date, no traffic, account is ${tenureMonths} months old. May be a setup issue — flag for investigation but do not state as fact.`;
+    } else {
+      websitePublishInterpretation = `UNKNOWN: No recent publish date. Traffic data unavailable. Structural investigation needed — do not assert the site was never live.`;
+    }
+  }
+
+  // Pitch frame: determines how Section 1 must open
+  const daysUntilCancel = effectiveCancelDate
+    ? Math.ceil((new Date(effectiveCancelDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : 999;
+  const isPastDue = client.paymentStatus === 'PAST_DUE';
+  const hasNamedCompetitor = !!(
+    scheduledCancellation?.competitor ||
+    agentNotes?.toLowerCase().match(/hibu|scorpion|thryv|yelp|reachlocal|vendasta|seo|marketing agency/i)
+  );
+
+  type PitchFrame = 'billing_first' | 'competitive_defense' | 'service_gap_own_and_fix' | 'value_proof' | 'urgency_window' | 'relationship_save';
+  let pitchFrame: PitchFrame;
+  if (isPastDue) {
+    pitchFrame = 'billing_first';
+  } else if (daysUntilCancel <= 7) {
+    pitchFrame = 'urgency_window';
+  } else if (hasNamedCompetitor) {
+    pitchFrame = 'competitive_defense';
+  } else if (contactStoryInterpretation === 'client_avoidance' && (daysSinceLCRPrecomputed ?? 0) >= 365) {
+    pitchFrame = 'relationship_save';
+  } else if (contactStoryInterpretation === 'tsi_gap') {
+    pitchFrame = 'service_gap_own_and_fix';
+  } else {
+    pitchFrame = 'value_proof';
+  }
+
   const isInCommitment = effectiveCancelDate ? new Date(effectiveCancelDate) > new Date() : false;
   const daysRemainingInCommitment = isInCommitment && effectiveCancelDate
     ? Math.ceil((new Date(effectiveCancelDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -322,6 +397,15 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     periodDays,
     currentDate: `${currentMonth} ${currentYear}`,
     agentCancelNotes: agentNotes || null,
+    // ── Pre-computed interpretations (injected as facts — do NOT override these) ──
+    _precomputed: {
+      pitchFrame,
+      contactStory: {
+        interpretation: contactStoryInterpretation,
+        explanation: contactStoryExplanation,
+      },
+      websitePublishInterpretation,
+    },
   }, null, 2);
 
   const context = getRetentionContext(false); // skip Notes section for token budget
@@ -351,25 +435,38 @@ ${snapshot}
 
 Analyze this data from every angle and return a JSON object. The brief you generate will be read by a live retention agent on a phone call. It must feel like it was written specifically for this client, not generated from a template.
 
-Before writing anything, reason through:
-1. **What business is this?** What vertical, what service area, what kind of customer base? Name the specific trade or service — "painting contractor" not "home services", "industrial welding fabricator" not "trades business", "tattoo studio" not "personal services."
-2. **What is the REAL seasonal pattern for this specific vertical in ${currentMonth}?** This is the most commonly botched step. Do not default to "peak season." Go through this checklist:
-   - Is this a business where demand is genuinely tied to weather, tax cycles, holidays, or a specific buying window? Name the specific driver.
-   - TRUE high-seasonality verticals: exterior contractors (painting, roofing, concrete, landscaping — weather-dependent), HVAC (summer heat + winter cold), tax prep (Jan–Apr), pool services (May–Sep)
-   - MODERATE seasonality: restaurants, retail, auto services, moving companies
-   - LOW / FLAT seasonality: tattoo studios, mobile repair, electricians, plumbers, urgent care, most professional services, salons, gyms
-   - If you cannot name a SPECIFIC reason why ${currentMonth} is peak or off-peak for THIS exact vertical, classify it as moderate or flat and make a year-round visibility argument instead
-   - The test: could you copy your seasonalContext paragraph and paste it onto a different business in a completely different vertical? If yes, it's not specific enough — rewrite it.
-3. **What does the data actually say?** Not just what's missing — what's working, what's trending?
-4. **Why are they really canceling?** Use the agent notes, the payment status, and the activity signals to infer the real reason.
-5. **What would actually change their mind?** For this specific client, in this specific situation?
-6. **Who are they actually competing against?** For this vertical in this market — is it other local independents, national franchises, word-of-mouth referrals, Angi/HomeAdvisor listings? What makes digital search visibility specifically valuable vs. their other options for getting new customers?
+**HOLD ALL REASONING INTERNALLY — OUTPUT ONLY JSON:**
+Do not write any analysis, reasoning, or explanation before the JSON object. Your ENTIRE response must begin with { and end with }. Any text outside the JSON will break the pipeline.
+
+Reason through the following questions silently before writing the JSON — your answers inform the JSON fields but do NOT appear in your output:
+1. What specific trade/service is this? (e.g. "exterior painting contractor", not "home services")
+2. What is the real seasonal pattern for this vertical in ${currentMonth}? Is demand weather-driven, tax-cycle-driven, or flat year-round?
+3. What does the data actually say? Not what's missing — what's working and what's trending?
+4. Why are they REALLY canceling? Check the pitchFrame in _precomputed — it already tells you the primary driver.
+5. What would actually change their mind for this specific client in this situation?
+6. READ THE _precomputed BLOCK FIRST. The pitchFrame, contactStory.interpretation, and websitePublishInterpretation are pre-analyzed facts. Do NOT contradict them. Build your analysis from them.
 
 **NULL DATA ≠ ABSENT PRODUCT — READ THIS FIRST:**
 - \`subscribedProducts\` is the ONLY source of truth for what this client has. Trust it absolutely.
 - If a platform data field is null (e.g., gbp: null, website: null, listings: null), it means the data FETCH FAILED or we couldn't resolve the account — it does NOT mean the client lacks that product.
 - NEVER say "no active products", "no website", "no listings", or anything implying the client isn't subscribed, based on null data. Only conclude a product is absent if subscribedProducts explicitly shows false.
-- When subscribed but data is null: note that "data was unavailable for this period" and pivot to what IS available (vcita leads, activities, reviews, service keys, tenure).
+- When subscribed but data is null: pivot to what IS available — never lead with what's missing.
+
+**RESOURCEFULNESS — BUILD THE CASE FROM WHAT YOU HAVE:**
+When platform data is unavailable, do not make absence the story. A good retention analyst makes a compelling case from whatever data exists. Use these pivot rules:
+
+- **GBP null:** Lead with tenure months (every month = accumulated Google authority), total reviews if available, directory listing count, website visitors. Frame: "X months of Google authority built" even without current impression numbers.
+- **Website UNPUBLISHED (check _precomputed.websitePublishInterpretation first):** If interpretation shows RECENTLY_ACTIVE, the site was live until recently — do NOT call it a setup failure. Say "the site is currently paused" and pivot to the equity built during active months. Only flag as a structural issue if interpretation shows POSSIBLY_NOT_PUBLISHED.
+- **Yext null/timeout:** Use GBP visibility and website traffic as evidence of digital presence. Directory value argument: "synced listings across Google, Yelp, Apple Maps, Bing" from Falcon subscription data.
+- **All platform data null:** Lead with tenure (months × monthly price = total investment), what rebuilding costs elsewhere (new website $3K-$8K, SEO 6–12 months to ramp, directories $100-$200/month separately), and the specific cancel date as urgency.
+- **vcita null:** Skip pipeline section entirely. Focus on GBP leads and website traffic. Never make up lead counts.
+
+**FACTUAL CONSTRAINTS — NEVER DO THESE:**
+1. NEVER say a product was "never activated," "never set up," or "never used" from low usage data. Low engagement = client hasn't engaged fully. "Underutilized" is correct. "Never activated" is not.
+2. NEVER conclude a website was "never live" from UNPUBLISHED status — always check \`_precomputed.websitePublishInterpretation\` first.
+3. NEVER frame client non-response (high LCR) as a TSI service failure if \`_precomputed.contactStory.interpretation\` is "client_avoidance". TSI has been calling. The client isn't answering.
+4. NEVER invent or round up metrics. "87 GBP impressions" is not "nearly 100." Use exact numbers or skip them.
+5. NEVER use the word "activated" in the context of product setup. Use "engaged with" or "fully utilized" instead.
 
 **GBP ZERO vs. UNAVAILABLE — CRITICAL DISTINCTION:**
 - GBP data = null → the GBP fetch FAILED or the account is unresolved. Flag this as a setup issue needing investigation. Do NOT say "your GBP shows zero impressions." The correct framing is "we couldn't pull your Google data — there may be an account connection issue we need to resolve."
@@ -494,14 +591,21 @@ The topRetentionHook should be a data-backed statement the agent can say verbati
 - GOOD: "You have a $[pipelineAtRisk] pipeline of active proposals in your CRM right now — that disappears on Day 1 of cancellation."
 Pick the single most compelling statistic and build the hook around it.
 
+The JSON object you return must include these additional fields at the root level:
+- "pitchFrame": one of "billing_first" | "competitive_defense" | "service_gap_own_and_fix" | "value_proof" | "urgency_window" | "relationship_save" — MUST match _precomputed.pitchFrame unless you have strong evidence to deviate
+- "contactStoryInterpretation": one of "client_avoidance" | "tsi_gap" | "healthy" | "unknown" — MUST match _precomputed.contactStory.interpretation
+- "competitors": array of named brand competitors (empty array if none named)
+- "urgencyFlag": true if cancel date is within 7 days, false otherwise
+- "cancellationType": brief label for the primary cancel driver (e.g. "billing_decline", "competitor_switch", "no_roi", "service_issue")
+
 Rules:
-- opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in the actual data.
+- opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in actual available data.
 - lossAssets: 3–6 items, ordered by timing (Day 1 first). Use actual numbers from their data where possible.
 - insights: only for subscribed products (${insightSections.join(', ')}). Use real numbers. Reserve high urgency for genuine gaps.
 - Return only the JSON object.
 
 **CRITICAL — OUTPUT FORMAT:**
-Your ENTIRE response must be a single valid JSON object. Start with \`{\` and end with \`}\`. Do NOT write any reasoning, preamble, or text before or after the JSON. The reasoning questions above are for your internal analysis only — they must NOT appear in your output. Any text outside the JSON object will break the pipeline.`;
+Your ENTIRE response must be a single valid JSON object starting with { and ending with }. No reasoning text. No preamble. No explanation before or after. The JSON is the only output.`;
 }
 
 export async function runAnalyst(
