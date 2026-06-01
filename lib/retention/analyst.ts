@@ -152,9 +152,19 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     ? Math.floor((Date.now() - new Date(duda.lastPublished).getTime()) / (1000 * 60 * 60 * 24))
     : null;
   let websitePublishInterpretation = 'no_data';
+  // If the client account is cancelled/cancelling, an UNPUBLISHED site with no lastPublished
+  // is almost certainly a post-cancellation artifact — TSI unpublishes on cancel.
+  // Never conclude the site was never live when the account is in a cancelled state.
+  const accountIsCancelled = client.status?.toLowerCase().includes('cancel') ||
+    (client.cancellationHistory ?? []).some(e =>
+      e.event?.toLowerCase().includes('cancel') &&
+      new Date(e.date).getTime() > Date.now() - 30 * 24 * 60 * 60 * 1000
+    );
   if (duda) {
     if (dudaLastPublishedDays !== null && dudaLastPublishedDays <= 60) {
       websitePublishInterpretation = `RECENTLY_ACTIVE: Site was published ${dudaLastPublishedDays} days ago. The current inactive status is likely a post-cancellation artifact. DO NOT treat as a setup failure or say the site was never live. The site built ${tenureMonths} months of SEO equity.`;
+    } else if (accountIsCancelled && dudaLastPublishedDays === null) {
+      websitePublishInterpretation = `POST_CANCEL_UNPUBLISHED: Account is in cancelled/cancelling status and the site has no publish date — this means TSI unpublished the site as part of cancellation processing. The site WAS live during the client's ${tenureMonths}-month tenure. DO NOT say the site was never published or never visible. Say the site is currently inactive due to the cancellation process.`;
     } else if (dudaLastPublishedDays !== null && dudaLastPublishedDays <= 180) {
       websitePublishInterpretation = `STALE: Last published ${dudaLastPublishedDays} days ago. Content cadence gap — not a structural setup failure.`;
     } else if ((duda.visits ?? 0) > 0 || (duda.pageViews ?? 0) > 0) {
@@ -171,6 +181,11 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     ? Math.ceil((new Date(effectiveCancelDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : 999;
   const isPastDue = client.paymentStatus === 'PAST_DUE';
+  // Also detect billing_first from cancel reason text — paymentStatus may not reflect the decline yet
+  const cancelReasonImpliesBilling = !!(
+    agentNotes?.toLowerCase().match(/billing|decline|chargeback|payment fail|ach|non.?pay|past.?due/i) ||
+    scheduledCancellation?.reason?.toLowerCase().match(/billing|decline|chargeback|payment fail|ach|non.?pay/i)
+  );
   const hasNamedCompetitor = !!(
     scheduledCancellation?.competitor ||
     agentNotes?.toLowerCase().match(/hibu|scorpion|thryv|yelp|reachlocal|vendasta|seo|marketing agency/i)
@@ -178,7 +193,7 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
 
   type PitchFrame = 'billing_first' | 'competitive_defense' | 'service_gap_own_and_fix' | 'value_proof' | 'urgency_window' | 'relationship_save';
   let pitchFrame: PitchFrame;
-  if (isPastDue) {
+  if (isPastDue || cancelReasonImpliesBilling) {
     pitchFrame = 'billing_first';
   } else if (daysUntilCancel <= 7) {
     pitchFrame = 'urgency_window';
