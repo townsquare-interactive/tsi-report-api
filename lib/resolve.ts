@@ -231,19 +231,40 @@ async function getGbpLocationId(
   if (byName) return byName;
 
   // 3b. Title-contains fallback — uses AIP-160 `:` operator for partial match
-  // Handles cases where Falcon name ("Eash Co. LLC") differs from GBP display name ("Eash Co.")
-  const shortName = businessName.split(/\s+/).slice(0, 3).join(' ').replace(/[,\.]/g, '').trim();
-  if (shortName && shortName !== businessName) {
-    const containsFilter = encodeURIComponent(`title:"${shortName}"`);
-    const containsRes = await fetch(
-      `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${containsFilter}`,
-      { headers: { Authorization: `Bearer ${access_token}` } }
-    );
-    if (containsRes.ok) {
-      const containsData = await containsRes.json() as { locations?: Array<{ name: string; title: string }> };
-      if (containsData.locations?.[0]?.name) {
-        console.log(`[GBP] title-contains SUCCESS for ${gpid} (query="${shortName}"): ${containsData.locations[0].name}`);
-        return containsData.locations[0].name;
+  // Handles: Falcon name ("Eash Co. LLC") vs GBP name ("Eash Co."), blank storeCodes, CID storeCodes
+  // Strategy: strip common suffix words (LLC, Inc, Corp, Co., Company, of, and, &, the, services, solutions)
+  //           then take the first 2 meaningful words as the search term
+  const SUFFIX_WORDS = /\b(llc|inc|corp|ltd|co|company|companies|group|services|solutions|and|of|the|&|at|by)\b/gi;
+  const cleanedName = businessName
+    .replace(/[,\.]/g, ' ')           // remove punctuation
+    .replace(SUFFIX_WORDS, ' ')        // remove suffix/filler words
+    .replace(/\s+/g, ' ')             // collapse spaces
+    .trim();
+  // Take first 2 words of cleaned name — specific enough to avoid false positives, forgiving of suffix differences
+  const words = cleanedName.split(/\s+/).filter(w => w.length > 1);
+  const shortName = words.slice(0, 2).join(' ');
+
+  if (shortName.length >= 3) {
+    // Try the 2-word contains, then fall back to first word only if no match
+    for (const query of [shortName, words[0]].filter(Boolean)) {
+      if (!query || query.length < 3) continue;
+      const containsFilter = encodeURIComponent(`title:"${query}"`);
+      const containsRes = await fetch(
+        `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${containsFilter}`,
+        { headers: { Authorization: `Bearer ${access_token}` } }
+      );
+      if (containsRes.ok) {
+        const containsData = await containsRes.json() as { locations?: Array<{ name: string; title: string }> };
+        // Only use the result if the returned title meaningfully overlaps with businessName (avoid false positives)
+        const matched = containsData.locations?.find(loc => {
+          const locTitle = loc.title?.toLowerCase() ?? '';
+          const bizWords = businessName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+          return bizWords.some(w => locTitle.includes(w));
+        });
+        if (matched?.name) {
+          console.log(`[GBP] title-contains SUCCESS for ${gpid} (query="${query}", matched="${matched.title}"): ${matched.name}`);
+          return matched.name;
+        }
       }
     }
   }
