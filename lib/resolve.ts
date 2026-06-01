@@ -6,11 +6,13 @@
 //   2. Yext entity: GPID → googleAccountId + googlePlaceId
 //      googlePlaceId used for direct GBP lookup (fast, exact, no name-mismatch fragility)
 //      googleAccountId kept as last-resort fallback
-//   3. GBP lookup order:
+//   3. GBP lookup order (6 steps — tries each in sequence):
 //      a) Agency Account filtered by metadata.placeId (exact, fast — preferred)
-//      b) Agency Account filtered by storeCode = GPID + "-001" (e.g. "TI ROOFIN047" → "TI ROOFIN047-001")
-//      c) Agency Account filtered by title (name match — fragile fallback)
-//      d) Client's own Google account filtered by title (rarely accessible, safety net)
+//      b) Agency Account filtered by storeCode "{GPID}-001" (spaces preserved)
+//      c) Agency Account filtered by storeCode "{GPID_no_spaces}-001" (no spaces — older clients)
+//      d) Agency Account filtered by phone number (Yext mainPhone — reliable for blank/CID storeCodes)
+//      e) Agency Account filtered by title exact match (fragile — name mismatches cause nulls)
+//      f) Agency Account filtered by title-contains (fuzzy — strips suffixes, tries first 2 words)
 //
 // GBP OAuth account: gbp.agency@townsquaredigital.com (authorized 2026-05-21)
 // Agency Account: accounts/105329348540167006988 — 9,638 TSI client locations
@@ -233,7 +235,24 @@ async function getGbpLocationId(
   }
   console.log(`[GBP] storeCode: 0 results for ${gpid} (tried both space-preserved and no-space formats)`);
 
-  // 3. Name-based lookup — exact match first, then contains (handles "Eash Co. LLC" vs "Eash Co." mismatches)
+  // 3c. Phone number filter — reliable for blank/CID storeCode clients where name also differs
+  // Yext mainPhone normalized to digits; GBP phone filter matches E.164 or local format
+  if (mainPhone && mainPhone.length >= 7) {
+    const phoneFilter = encodeURIComponent(`phone="${mainPhone}"`);
+    const phoneRes = await fetch(
+      `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${phoneFilter}`,
+      { headers: { Authorization: `Bearer ${access_token}` } }
+    );
+    if (phoneRes.ok) {
+      const phoneData = await phoneRes.json() as { locations?: Array<{ name: string; title: string }> };
+      if (phoneData.locations?.[0]?.name) {
+        console.log(`[GBP] phone filter SUCCESS for ${gpid} (phone=${mainPhone}): ${phoneData.locations[0].name}`);
+        return phoneData.locations[0].name;
+      }
+    }
+  }
+
+  // 4. Name-based lookup — exact match first, then contains (handles "Eash Co. LLC" vs "Eash Co." mismatches)
   const byName = await searchGbpAccount(GBP_TSI_ACCOUNT, businessName, access_token);
   if (byName) return byName;
 
