@@ -18,7 +18,7 @@
 
 import { getFalconCredentials, getGbpCredentials, getYextCredentials } from './secrets';
 
-const GBP_TSI_ACCOUNT = 'accounts/105329348540167006988'; // Agency Account (9,638 locations)
+const GBP_TSI_ACCOUNT = 'accounts/105184842354302665018'; // TSI Agency Account (confirmed correct in 2026-05-19 debug — 105329348540167006988 is a client's own account, NOT TSI)
 const YEXT_BASE = 'https://api.yextapis.com/v2';
 const YEXT_API_VERSION = '20230301';
 
@@ -207,7 +207,9 @@ async function getGbpLocationId(
   }
 
   // 2. StoreCode lookup: GPID with spaces removed + "-001" (e.g. "TI JULEEA001" → "TIJULEEA001-001")
-  const storeCode = gpid.replace(/\s+/g, '') + '-001';
+  // GBP stores storeCode with spaces preserved from GPID — e.g. "TI ROOFIN047" → "TI ROOFIN047-001" NOT "TIROOFIN047-001"
+  // Confirmed via GBP Manager screenshot 2026-06-01: store code column shows "TI ROOFIN047-001" (with space)
+  const storeCode = gpid + '-001';
   const encodedStoreCode = encodeURIComponent(`storeCode="${storeCode}"`);
   const scRes = await fetch(
     `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${encodedStoreCode}`,
