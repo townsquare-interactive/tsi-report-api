@@ -207,27 +207,24 @@ async function getGbpLocationId(
     if (byPlaceId) return byPlaceId;
   }
 
-  // 2. StoreCode lookup: GPID with spaces removed + "-001" (e.g. "TI JULEEA001" → "TIJULEEA001-001")
-  // StoreCode format: {GPID}-001 — spaces PRESERVED (e.g. "TI ROOFIN047" → "TI ROOFIN047-001")
-  // Confirmed by GBP Manager screenshot 2026-06-01: store code column shows "TI ROOFIN047-001" with space
-  // auth-brief.md said no-spaces but that was wrong — JULEEA001 works via Place ID (step 1), not storeCode
-  const storeCode = gpid + '-001';
-  const encodedStoreCode = encodeURIComponent(`storeCode="${storeCode}"`);
-  const scRes = await fetch(
-    `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${encodedStoreCode}`,
-    { headers: { Authorization: `Bearer ${access_token}` } }
-  );
-  if (scRes.ok) {
-    const scData = await scRes.json() as { locations?: Array<{ name: string }> };
-    if (scData.locations?.[0]?.name) {
-      console.log(`[GBP] storeCode lookup SUCCESS for ${gpid}: ${scData.locations[0].name}`);
-      return scData.locations[0].name;
+  // 2. StoreCode lookup — try both formats since TSI agency account has mixed history:
+  //    New format (spaces preserved): "TI ROOFIN047-001" — confirmed working 2026-06-01
+  //    Old format (spaces stripped):  "TIROOFIN047-001" — may exist for older onboarded clients
+  for (const storeCode of [`${gpid}-001`, `${gpid.replace(/\s+/g, '')}-001`]) {
+    const encodedSC = encodeURIComponent(`storeCode="${storeCode}"`);
+    const scRes = await fetch(
+      `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${encodedSC}`,
+      { headers: { Authorization: `Bearer ${access_token}` } }
+    );
+    if (scRes.ok) {
+      const scData = await scRes.json() as { locations?: Array<{ name: string }> };
+      if (scData.locations?.[0]?.name) {
+        console.log(`[GBP] storeCode SUCCESS for ${gpid} (format="${storeCode}"): ${scData.locations[0].name}`);
+        return scData.locations[0].name;
+      }
     }
-    console.log(`[GBP] storeCode lookup returned 0 locations for ${gpid} (storeCode=${storeCode})`);
-  } else {
-    const scErr = await scRes.text().catch(() => '');
-    console.error(`[GBP] storeCode lookup FAILED for ${gpid}: HTTP ${scRes.status} — ${scErr.slice(0, 200)}`);
   }
+  console.log(`[GBP] storeCode: 0 results for ${gpid} (tried both space-preserved and no-space formats)`);
 
   // 3. Name-based lookup (fragile fallback)
   const byName = await searchGbpAccount(GBP_TSI_ACCOUNT, businessName, access_token);
