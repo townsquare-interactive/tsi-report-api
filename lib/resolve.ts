@@ -118,6 +118,8 @@ async function getYextLocationData(gpid: string): Promise<YextLocationData> {
         googleAttributes?: { googleAccountId?: string | number };
         googleAccountId?: string | number;
         googlePlaceId?: string;
+        mainPhone?: string;   // Yext phone field variants
+        phone?: string;
       };
     };
 
