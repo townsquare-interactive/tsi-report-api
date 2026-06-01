@@ -226,9 +226,27 @@ async function getGbpLocationId(
   }
   console.log(`[GBP] storeCode: 0 results for ${gpid} (tried both space-preserved and no-space formats)`);
 
-  // 3. Name-based lookup (fragile fallback)
+  // 3. Name-based lookup — exact match first, then contains (handles "Eash Co. LLC" vs "Eash Co." mismatches)
   const byName = await searchGbpAccount(GBP_TSI_ACCOUNT, businessName, access_token);
   if (byName) return byName;
+
+  // 3b. Title-contains fallback — uses AIP-160 `:` operator for partial match
+  // Handles cases where Falcon name ("Eash Co. LLC") differs from GBP display name ("Eash Co.")
+  const shortName = businessName.split(/\s+/).slice(0, 3).join(' ').replace(/[,\.]/g, '').trim();
+  if (shortName && shortName !== businessName) {
+    const containsFilter = encodeURIComponent(`title:"${shortName}"`);
+    const containsRes = await fetch(
+      `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${containsFilter}`,
+      { headers: { Authorization: `Bearer ${access_token}` } }
+    );
+    if (containsRes.ok) {
+      const containsData = await containsRes.json() as { locations?: Array<{ name: string; title: string }> };
+      if (containsData.locations?.[0]?.name) {
+        console.log(`[GBP] title-contains SUCCESS for ${gpid} (query="${shortName}"): ${containsData.locations[0].name}`);
+        return containsData.locations[0].name;
+      }
+    }
+  }
 
   // 4. Client's own Google account (last resort — usually inaccessible)
   if (fallbackGoogleAccountId) {
