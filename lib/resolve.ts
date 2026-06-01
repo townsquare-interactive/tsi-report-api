@@ -8,13 +8,14 @@
 //      googleAccountId kept as last-resort fallback
 //   3. GBP lookup order:
 //      a) Agency Account filtered by metadata.placeId (exact, fast — preferred)
-//      b) Agency Account filtered by storeCode = GPID_no_spaces + "-001" (e.g. TIJULEEA001-001)
+//      b) Agency Account filtered by storeCode = GPID + "-001" (e.g. "TI ROOFIN047" → "TI ROOFIN047-001")
 //      c) Agency Account filtered by title (name match — fragile fallback)
 //      d) Client's own Google account filtered by title (rarely accessible, safety net)
 //
 // GBP OAuth account: gbp.agency@townsquaredigital.com (authorized 2026-05-21)
 // Agency Account: accounts/105329348540167006988 — 9,638 TSI client locations
-// StoreCode format: {GPID with spaces removed}-001 (e.g. "TI JULEEA001" → "TIJULEEA001-001")
+// StoreCode format: {GPID}-001 — SPACES PRESERVED (e.g. "TI ROOFIN047" → "TI ROOFIN047-001")
+// Confirmed via GBP Manager screenshot 2026-06-01 — store code column shows spaces in storeCode
 
 import { getFalconCredentials, getGbpCredentials, getYextCredentials } from './secrets';
 
