@@ -155,13 +155,13 @@ function buildSection3Guidelines(
     • 10% → saves ${fmt(disc10!)}/mo → new rate ${fmt(priceAfter10!)}/mo
     • 15% → saves ${fmt(disc15!)}/mo → new rate ${fmt(priceAfter15!)}/mo
     • 20% → saves ${fmt(disc20!)}/mo → new rate ${fmt(priceAfter20!)}/mo`
-    : `Monthly price unknown — use percentage labels only`;
+    : `Monthly price unknown — use ONLY percentage language in labels and scripts. NEVER generate placeholder text like "$[PRICE x 0.95]" — say "5% off your current monthly rate" instead. The agent knows the price; you do not need to compute it.`;
 
   const managerDiscountBreakdown = hasPricing
     ? `Actual amounts for this client:
     • 20% off × 2 months → ${fmt(mgr20x2Price!)}/mo for 2 months (saves ${fmt(disc20! * 2)} total)
     • 50% off × 1 month  → ${fmt(mgr50x1Price!)} for one month (saves ${fmt(disc20!)} one-time)`
-    : `20% off 2 months OR 50% off 1 month (price unknown — compute from client data)`;
+    : `20% off 2 months OR 50% off 1 month — use percentage language only, NOT placeholder text like "$[PRICE x 0.80]"`;
 
   return `SECTION 3 — ECONOMICS: LAST RESORT ONLY
 

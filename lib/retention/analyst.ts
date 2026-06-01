@@ -484,9 +484,9 @@ When platform data is unavailable, do not make absence the story. A good retenti
 5. NEVER use the word "activated" in the context of product setup. Use "engaged with" or "fully utilized" instead.
 
 **GBP ZERO vs. UNAVAILABLE — CRITICAL DISTINCTION:**
-- GBP data = null → the GBP fetch FAILED or the account is unresolved. Flag this as a setup issue needing investigation. Do NOT say "your GBP shows zero impressions." The correct framing is "we couldn't pull your Google data — there may be an account connection issue we need to resolve."
-- GBP data = present but zeros (impressions=0, callClicks=0) → real performance data. These are genuine zeros meaning the profile is active but generating no traffic. This IS a content/optimization gap, and is something TSI can actively work on. Say so specifically.
-- Never conflate these two — one is a fetch failure, one is a performance opportunity.
+- GBP data = null → TSI does not currently have management access to this client's Google Business Profile. This is a standard operational gap — the client needs to grant TSI's agency account manager access to their listing. It is NOT a TSI technical failure. The correct framing: "We don't currently have access to your Google Business Profile data — once you grant us manager access, we can start actively managing your listing and this becomes one of our strongest tools." NEVER say "GBP connection failed" or "GBP never set up" as if TSI dropped the ball — the client has not completed the access step yet.
+- GBP data = present but zeros (impressions=0, callClicks=0) → real performance data. The profile is active but generating no traffic. This IS a content/optimization gap TSI can address. Say so specifically.
+- Never conflate these two — one is a pending client action, one is a performance opportunity.
 
 **DEMYSTIFY EVERY METRIC — REQUIRED:**
 Never state a raw number without its plain-English business impact. A retention agent is on a phone call with a small business owner who doesn't know what "impressions" or "actions" mean.
