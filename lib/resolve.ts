@@ -242,4 +242,5 @@ export async function resolveFromGpid(gpid: string): Promise<ResolvedParams> {
   // Step 3: GBP — Place ID → storeCode → name → client account fallback
   const gbpLocationId = await getGbpLocationId(gpid, businessName, googleAccountId, googlePlaceId).catch(() => null);
 
-  return 
+  return { clientId, vcitaId, dudaSiteName, gbpLocationId, businessName };
+}
