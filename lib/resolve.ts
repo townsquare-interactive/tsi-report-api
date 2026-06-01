@@ -312,7 +312,7 @@ export async function resolveFromGpid(gpid: string): Promise<ResolvedParams> {
 
   // Step 2: Yext — returns googlePlaceId (preferred GBP key) + googleAccountId (fallback)
   const googleData = await getYextLocationData(gpid).catch(
-    () => ({ googleAccountId: null, googlePlaceId: null })
+    () => ({ googleAccountId: null, googlePlaceId: null, mainPhone: null })
   );
 
   // Step 3: GBP — Place ID → storeCode → name → client account fallback
