@@ -108,7 +108,7 @@ async function getYextLocationData(gpid: string): Promise<YextLocationData> {
       { headers: { 'Content-Type': 'application/json' } }
     );
 
-    if (!res.ok) return { googleAccountId: null, googlePlaceId: null };
+    if (!res.ok) return { googleAccountId: null, googlePlaceId: null, mainPhone: null };
 
     const data = await res.json() as {
       response?: {
