@@ -18,7 +18,7 @@
 
 import { getFalconCredentials, getGbpCredentials, getYextCredentials } from './secrets';
 
-const GBP_TSI_ACCOUNT = 'accounts/105184842354302665018'; // Agency Account (GBP TSI — confirmed via MCP 2026-06-01; old ID 105329348540167006988 returned 404)
+const GBP_TSI_ACCOUNT = 'accounts/105329348540167006988'; // Agency Account (9,638 locations)
 const YEXT_BASE = 'https://api.yextapis.com/v2';
 const YEXT_API_VERSION = '20230301';
 
@@ -192,8 +192,13 @@ async function getGbpLocationId(
       grant_type: 'refresh_token',
     }),
   });
-  if (!tokRes.ok) return null;
+  if (!tokRes.ok) {
+    const errText = await tokRes.text().catch(() => '');
+    console.error(`[GBP] OAuth token refresh FAILED for ${gpid}: HTTP ${tokRes.status} — ${errText.slice(0, 200)}`);
+    return null;
+  }
   const { access_token } = await tokRes.json() as { access_token: string };
+  console.log(`[GBP] OAuth token refreshed OK for ${gpid}`);
 
   // 1. Place ID lookup (preferred — exact, no name fragility)
   if (googlePlaceId) {
@@ -210,7 +215,14 @@ async function getGbpLocationId(
   );
   if (scRes.ok) {
     const scData = await scRes.json() as { locations?: Array<{ name: string }> };
-    if (scData.locations?.[0]?.name) return scData.locations[0].name;
+    if (scData.locations?.[0]?.name) {
+      console.log(`[GBP] storeCode lookup SUCCESS for ${gpid}: ${scData.locations[0].name}`);
+      return scData.locations[0].name;
+    }
+    console.log(`[GBP] storeCode lookup returned 0 locations for ${gpid} (storeCode=${storeCode})`);
+  } else {
+    const scErr = await scRes.text().catch(() => '');
+    console.error(`[GBP] storeCode lookup FAILED for ${gpid}: HTTP ${scRes.status} — ${scErr.slice(0, 200)}`);
   }
 
   // 3. Name-based lookup (fragile fallback)
