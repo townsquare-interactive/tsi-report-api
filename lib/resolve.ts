@@ -6,13 +6,11 @@
 //   2. Yext entity: GPID → googleAccountId + googlePlaceId
 //      googlePlaceId used for direct GBP lookup (fast, exact, no name-mismatch fragility)
 //      googleAccountId kept as last-resort fallback
-//   3. GBP lookup order (6 steps — tries each in sequence):
+//   3. GBP lookup order:
 //      a) Agency Account filtered by metadata.placeId (exact, fast — preferred)
-//      b) Agency Account filtered by storeCode "{GPID}-001" (spaces preserved)
-//      c) Agency Account filtered by storeCode "{GPID_no_spaces}-001" (no spaces — older clients)
-//      d) Agency Account filtered by phone number (Yext mainPhone — reliable for blank/CID storeCodes)
-//      e) Agency Account filtered by title exact match (fragile — name mismatches cause nulls)
-//      f) Agency Account filtered by title-contains (fuzzy — strips suffixes, tries first 2 words)
+//      b) Agency Account filtered by storeCode = GPID + "-001" (e.g. "TI ROOFIN047" → "TI ROOFIN047-001")
+//      c) Agency Account filtered by title (name match — fragile fallback)
+//      d) Client's own Google account filtered by title (rarely accessible, safety net)
 //
 // GBP OAuth account: gbp.agency@townsquaredigital.com (authorized 2026-05-21)
 // Agency Account: accounts/105329348540167006988 — 9,638 TSI client locations
@@ -95,7 +93,7 @@ async function getFalconClientByGpid(gpid: string): Promise<{
 interface YextLocationData {
   googleAccountId: string | null;
   googlePlaceId: string | null;
-  mainPhone: string | null;    // E.164 format — used for GBP phone filter fallback
+  mainPhone: string | null;    // normalized phone — used for GBP phone filter fallback
 }
 
 async function getYextLocationData(gpid: string): Promise<YextLocationData> {
@@ -128,7 +126,6 @@ async function getYextLocationData(gpid: string): Promise<YextLocationData> {
       data.response?.googleAttributes?.googleAccountId ??
       null;
 
-    // Phone: Yext stores in various formats; normalize to E.164-compatible string
     const rawPhone = data.response?.mainPhone ?? data.response?.phone ?? null;
     const mainPhone = rawPhone ? String(rawPhone).replace(/[^+\d]/g, '') || null : null;
 
@@ -237,8 +234,7 @@ async function getGbpLocationId(
   }
   console.log(`[GBP] storeCode: 0 results for ${gpid} (tried both space-preserved and no-space formats)`);
 
-  // 3c. Phone number filter — reliable for blank/CID storeCode clients where name also differs
-  // Yext mainPhone normalized to digits; GBP phone filter matches E.164 or local format
+  // 3c. Phone number filter — reliable for clients with blank/CID storeCodes
   if (mainPhone && mainPhone.length >= 7) {
     const phoneFilter = encodeURIComponent(`phone="${mainPhone}"`);
     const phoneRes = await fetch(
@@ -254,7 +250,7 @@ async function getGbpLocationId(
     }
   }
 
-  // 4. Name-based lookup — exact match first, then contains (handles "Eash Co. LLC" vs "Eash Co." mismatches)
+  // 4. Name-based lookup — exact match first, then contains
   const byName = await searchGbpAccount(GBP_TSI_ACCOUNT, businessName, access_token);
   if (byName) return byName;
 
@@ -297,10 +293,9 @@ async function getGbpLocationId(
     }
   }
 
-  // Note: individual client Google accounts are NOT searched — TSI's OAuth credentials
-  // (gbp.agency@townsquaredigital.com) do not have access to client-owned accounts.
-  // fallbackGoogleAccountId from Yext is retained in case TSI ever gains that access,
-  // but it is not used in the lookup chain.
+  // Note: individual client Google accounts NOT searched — TSI OAuth (gbp.agency@...)
+  // does not have access to client-owned accounts. fallbackGoogleAccountId retained
+  // for future use if access is ever granted, but not used in current lookup chain.
 
   return null;
 }
@@ -310,13 +305,16 @@ export async function resolveFromGpid(gpid: string): Promise<ResolvedParams> {
   // Step 1: Falcon reverse-lookup — authoritative, no name-cascade fragility
   const { clientId, vcitaId, dudaSiteName, businessName } = await getFalconClientByGpid(gpid);
 
-  // Step 2: Yext — returns googlePlaceId (preferred GBP key) + googleAccountId (fallback)
+  // Step 2: Yext — returns googlePlaceId (preferred GBP key) + googleAccountId + mainPhone
   const googleData = await getYextLocationData(gpid).catch(
     () => ({ googleAccountId: null, googlePlaceId: null, mainPhone: null })
   );
 
-  // Step 3: GBP — Place ID → storeCode → name → client account fallback
-  const gbpLocationId = await getGbpLocationId(gpid, businessName, googleData.googleAccountId, googleData.googlePlaceId, googleData.mainPhone).catch(() => null);
+  // Step 3: GBP — Place ID → storeCode (both formats) → phone → title-exact → title-contains
+  const gbpLocationId = await getGbpLocationId(
+    gpid, businessName,
+    googleData.googleAccountId, googleData.googlePlaceId, googleData.mainPhone
+  ).catch(() => null);
 
   return { clientId, vcitaId, dudaSiteName, gbpLocationId, businessName };
 }
