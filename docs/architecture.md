@@ -2,46 +2,39 @@
 
 ## Overview
 
-Two-endpoint Next.js API for client intelligence and retention automation. All platform IDs are auto-resolved from a GPID — no manual ID passing required.
+Two-endpoint Next.js API for client intelligence and retention automation. All platform IDs are auto-resolved from a GPID.
 
 ## Endpoints
 
 ```
-GET  /api/report?gpid=TI+HDHAUL001&days=30       — Full platform report (GBP, Yext, vcita, Duda, Freshdesk)
-POST /api/retention                               — 5-agent AI retention brief (webhook or manual curl)
+GET  /api/report?gpid=TI+HDHAUL001&days=30       — Full platform report
+POST /api/retention                               — 5-agent AI retention brief
 ```
 
 ## GPID Resolution Chain (`lib/resolve.ts`)
-
-Every request starts with a GPID and resolves all platform IDs automatically:
 
 ```
 GPID (e.g. "TI ROOFIN047")
   │
   ▼ Step 1: Falcon GraphQL
-  │   filter: { externalServiceId: { gpId: $gpid } }
   │   → clientId, vcitaId, dudaSiteName, businessName
   │
   ▼ Step 2: Yext Entity Lookup (non-fatal)
-  │   account: {GPID_no_spaces}, entity: {GPID_no_spaces}-001
   │   → googlePlaceId (preferred GBP key)
   │   → googleAccountId (fallback)
   │
   ▼ Step 3: GBP Location Resolution (4 fallback levels)
-      a) Agency account + Place ID filter (exact, fast — preferred)
+      a) Agency account + Place ID filter
       b) Agency account + storeCode = {GPID_no_spaces}-001  (e.g. TIROOFIN047-001)
-      c) Agency account + title filter (fragile — name mismatch = null)
-      d) Client's own Google account + title (safety net)
-      → gbpLocationId (null if all 4 fail — GBP fetch is skipped)
+      c) Agency account + title filter (fragile)
+      d) Client own Google account + title (safety net)
+      → gbpLocationId (null if all 4 fail)
 ```
 
-**GBP Agency Account:** `accounts/105329348540167006988` (9,638+ TSI client locations)
-**GBP OAuth account:** `gbp.agency@townsquaredigital.com` — credentials in AWS Secrets Manager `tsi/mcp/gbp`
-**StoreCode format:** `{GPID_no_spaces}-001` — e.g. `TI ROOFIN047` → `TIROOFIN047-001` ✓ confirmed in GBP Manager
-
-**Known issue (2026-06-01):** GBP returning null for all clients — suspected OAuth refresh token expiry.
-Diagnosis: check Vercel logs for `[GBP] OAuth token refresh FAILED` entries.
-Fix: update refresh token in AWS Secrets Manager `tsi/mcp/gbp`.
+**GBP Agency Account:** `accounts/105329348540167006988` (9,638 TSI locations)
+**GBP OAuth:** `gbp.agency@townsquaredigital.com` — credentials in `tsi/mcp/gbp` (AWS Secrets Manager)
+**StoreCode format:** `{GPID_no_spaces}-001` — e.g. `TI ROOFIN047` → `TIROOFIN047-001`
+**Auth fixed:** 2026-05-21 — see `docs/integrations/gbp-auth-brief.md` or Obsidian `Integrations/gbp-auth-brief`
 
 ## Data Flow — `/api/report`
 
@@ -53,20 +46,38 @@ resolveFromGpid(gpid) → clientId, vcitaId, dudaSiteName, gbpLocationId
 │  GBP insights  │  Duda stats  │  Yext listings  │  vcita  │
 └─────────────────────────────────────────────────────────────┘
   + Falcon GraphQL (full client metadata)
-  │
-  ▼
-Compiled ReportData JSON — errors captured per platform, never blocking others
 ```
 
 ## Data Flow — `/api/retention`
 
 ```
-POST body: { id, type, custom_fields.cf_gf_gpid, description_text }
-  │
-  ▼ Dedup gate (MongoDB — skip if brief < 7 days old; bypass with forceRefresh=true)
-  │
-  ▼ Agent 1: Fetcher (no model)
-  │   resolveFromGpid → fetchClientData (Falcon + all platforms) + getTicketConversations
-  │   (both run in parallel via Promise.allSettled)
-  │
-  ▼ Agents 2 + 4: An
+POST body → Dedup gate (MongoDB) → Agent 1 Fetcher → Agents 2+4 parallel
+→ Agent 3 Formatter → Agent 5 Note Writer (gated) → MongoDB write
+```
+
+## Credential Architecture
+
+All credentials in **AWS Secrets Manager (us-east-1)** under `tsi/` namespace.
+
+| Secret | Contents |
+|--------|----------|
+| `tsi/mcp/gbp` | GBP OAuth: client_id, client_secret, refresh_token |
+| `tsi/mcp/falcon` | Falcon GraphQL API key + endpoint |
+| `tsi/mcp/duda` | Duda API username + password |
+| `tsi/mcp/yext` | Yext API key |
+| `tsi/mcp/vcita` | vcita API token |
+| `tsi/mcp/freshdesk` | Freshdesk API key + domain |
+| `tsi/mcp/soci` | SOCI API key |
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `lib/resolve.ts` | GPID → all platform IDs (GBP resolution chain) |
+| `lib/platforms/gbp.ts` | GBP insights, reviews, search keywords |
+| `lib/retention/analyst.ts` | Agent 2: retention reasoning + pitchFrame |
+| `lib/retention/formatter.ts` | Agent 3: three-section CSR brief |
+| `lib/retention/note-writer.ts` | Agent 5: Freshdesk HTML note |
+| `lib/retention/context.ts` | TSI institutional knowledge |
+| `lib/retention/store.ts` | MongoDB persistence + dedup |
+| `types/report.ts` | TypeScript types |
