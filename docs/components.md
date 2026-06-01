@@ -72,7 +72,7 @@
    - `googleAccountId` kept as last-resort fallback
 3. GBP lookup — four-tier priority:
    a. Agency Account filtered by `metadata.placeId="{placeId}"` (preferred — 1 API call, exact match)
-   b. Agency Account filtered by `storeCode="{GPID_no_spaces}-001"` (e.g. `TIJULEEA001-001`)
+   b. Agency Account filtered by `storeCode="{GPID}-001"` (spaces preserved, e.g. `TI JULEEA001-001`)
    c. Agency Account filtered by `title="{businessName}"` (fragile — name mismatches cause silent nulls)
    d. Client's own Google account filtered by title (last resort — usually inaccessible)
 
@@ -82,7 +82,7 @@
 **GBP Agency Account:** `accounts/105329348540167006988` (LOCATION_GROUP) — 9,638 TSI client locations  
 **GBP OAuth account:** `gbp.agency@townsquaredigital.com` — authorized 2026-05-21 via `generate-token.js`  
 **Google Cloud project:** `rosy-strata-448619-k8` (org: `townsquaregbp.com`) — OAuth app set to External/Production  
-**StoreCode format:** `{GPID with spaces removed}-001` — e.g. `"TI JULEEA001"` → `"TIJULEEA001-001"`  
+**StoreCode format:** `{GPID}-001` (spaces preserved) — e.g. `"TI JULEEA001"` → `"TI JULEEA001-001"`  
 **Confirmed working:** TI JULEEA001 → `locations/11851525588319014417`, 1,083 impressions (2026-05-21)
 
 **Deployed:** `dpl_67nS4qD2V46MRFMxTde3RRinJpWH` (2026-05-21)
@@ -441,4 +441,246 @@ Each section includes `agentScript` (phone) and `emailVersion` (follow-up email)
 - Products line — TypeScript-rendered from `serviceKeys` via `SERVICE_KEY_LABELS` map, never vendor names
 - TSI service gap flag if present
 
-**SERVICE_KEY_LABELS:** W→Websi
+**SERVICE_KEY_LABELS:** W→Website, O→SEO, Y→Directories, T→Targeting Ads, S→Social, E→E-Commerce, F→Facebook Ads, V→BMP, Z→Lead Nurturing, C→Call Trace, P→Call Trace Pro
+
+**Vendor name rule (added 2026-05-26):** Never expose third-party vendor names. "BMP"/"Growth Management" not vcita. "Directories" not Yext. "Website" not Duda. GBP/Google Business Profile is fine.
+
+**Notable highlights (added 2026-05-26):** Haiku instructed to add 1-2 "Notable:" bullets from brief data if anything genuinely stands out (strong GBP metric, high review count, significant lead volume, major gap). Skip if nothing notable.
+
+**CRITICAL — batch run safety:** NEVER use `forceRefresh:true` in batch runs. It bypasses `noteAlreadyPostedForTicket` idempotency. If a call silently succeeds and appears to time out, retrying with `forceRefresh` posts a duplicate note. `forceRefresh` is debug-only for intentional single-ticket reruns.
+
+**Note structure:**
+1. Header — client name, tenure, at-risk value (dynamic), products line, TSI service gap flag
+2. Before you call — snapshot, `contractNote` (if not month-to-month), cancel read, lead-with, vertical context
+3. Section 1 — Opportunity: headline, commitments list, agent script
+4. Section 2 — Fear/Loss: headline, loss timeline, years-of-work statement, agent script
+5. Section 3 — Economics (LAST RESORT): opening condition, eligibility notes, opening script, 5-step escalation sequence (each step: label, manager flag, eligibility, script), top gaps footer
+6. Generation footer with date
+
+**`renderFinancialOption(opt, stepNumber)`:** TypeScript function. Renders a single `FinancialOption` as an `<li>` with step number, label, manager flag (⚠️ MANAGER REQUIRED or agent-approved), eligibility, and quoted script.
+
+**`buildSection3Block(brief, gapAudit, topGaps)`:** TypeScript function. Builds the entire Section 3 HTML block: opening condition, eligibility notes, agent script, escalation sequence list, top gaps footer, generation date. Never touches the model.
+
+**Haiku prompt note:** Receives only `agentBrief`, `section1`, `section2` data (not `section3`). `contractNote` hardcoded as a literal string in the prompt (no conditional model instruction). Ends with: "Do NOT add a closing `<hr>` — the system appends Section 3 after your output."
+
+**Freshdesk write timeout:** `AbortSignal.timeout(15000)` on the note POST call — fail fast, never stall the pipeline.
+
+---
+
+## lib/retention/store.ts
+
+**Purpose:** MongoDB persistence. Writes full retention event (raw data + all agent outputs) for audit trail and dedup gate.
+
+**Exports:** `writeRetentionEvent`, `getRecentRetentionEvent` (dedup check within N days), `noteAlreadyPostedForTicket` (idempotency check before Freshdesk write)
+
+**Connection singleton (added 2026-05-28):** Module-level `connectionPromise: Promise<Db> | null` pattern replaces the previous `dbInstance` approach. All callers await the same in-flight Promise — prevents concurrent Lambda cold starts from racing to open multiple connections. `serverSelectionTimeoutMS: 5000`, `connectTimeoutMS: 10000`.
+
+**`getRetentionHistory` fix (2026-05-28):** `.toArray()` now properly awaited before the `as RetentionEventDoc[]` cast. Previous version cast the `Promise` directly, which TypeScript strict mode correctly rejected.
+
+---
+
+## types/report.ts
+
+All TypeScript types for the report API response.
+
+**Key type:** `ReportData` — `{ meta, client, gbp, gbpReviews, duda, yext, vcita, activities, soci, errors }`
+
+**GbpInsights.searchKeywords (added 2026-05-28):** `Array<{ keyword: string; impressions: number }> | null` — see `lib/platforms/gbp.ts` section above.
+
+**SOCI types (added 2026-05-20):** `SociPageMetrics`, `SociFbInsights`, `SociTopPost`, `SociSentiment`, `SociPeakHour`, `SociDemographics` — all exported from this file. `SociData` updated to include `fbNetworkId`, `pageMetrics`, `fbInsights`, `topPosts`, `sentiment`, `peakHours`, `demographics`, `reviewCounts`.
+
+**CommitmentTerms (added 2026-05-20):** `{ contractLengthMonths: number | null, contractStartDate: string | null, contractEndDate: string | null }` — sourced from Falcon `subscription.information.commitmentTerms`. Added to `FalconClient.subscription`.
+
+**FalconCancellationEvent (added 2026-05-21):** `{ event, date, cancelStatus, reason, pendingCancelDate }` — extracted from `CancellationLifecycleItem` in Falcon activities. Stored as `FalconClient.cancellationHistory: FalconCancellationEvent[]`.
+
+---
+
+## types/retention.ts
+
+TypeScript types for the retention pipeline.
+
+**Key types:** `FetchedData`, `AnalystOutput`, `GapAuditResult`, `RetentionBrief`, `RetentionEventDoc`
+
+**RetentionBrief:** `{ agentBrief, section1, section2, section3, pipelineAtRisk, tenureMonths }`
+
+**AnalystOutput** includes `monthlyPrice: number` — pass-through from `client.price` in Falcon, used by formatter for Section 3 free month cap check ($500 threshold).
+
+**AgentBrief** includes `contractNote: string | null` (added 2026-05-20) — pre-computed contract status string from `buildContractNote()`. Null for month-to-month clients. Non-null for 3- or 6-month contracts with end date, days remaining, or completion date.
+
+**AnalystOutput.competitiveBenchmark (added 2026-05-28):** `string` — required field. One sentence explicitly stating client's relative standing vs. the vertical health benchmark thresholds in `context.ts`. Example: "At 22 months, healthy exterior contractors show 1,000+ GBP impressions/month; this client is at 847 — low end of normal." Flows to formatter for use in `agentBrief.verticalNote`.
+
+**Section3Economics fields:** `headline`, `openingCondition`, `eligibilityNotes`, `escalationSequence: FinancialOption[]`, `agentScript`, `emailVersion`
+
+**FinancialOption fields:** `type` (agent_discount | manager_discount | free_month | downgrade | credit), `requiresManager: boolean`, `label`, `eligibility`, `script`
+
+**GapAuditResult.dimensions (expanded 2026-05-21):** Now 10 dimensions — `gbp`, `website`, `listings`, `reputation`, `pipeline`, `service`, `financial`, `structural`, `cancellation_history`, `social`. `PrioritizedGap.dimension` union updated to include all 10 keys.
+
+---
+
+## Dead Code Removed (2026-05-28)
+
+- **`lib/client-params.ts`** — legacy static client lookup table, superseded by `lib/resolve.ts` dynamic GPID resolution. Zero imports confirmed before deletion.
+- **`lib/retention.ts`** — deprecated empty orchestrator stub, superseded by `app/api/retention/route.ts`. Zero imports confirmed before deletion.
+
+---
+
+## Changes — 2026-05-28 v2
+
+### lib/falcon.ts
+
+**New Falcon fields (added):** CLIENT_QUERY now fetches:
+- `clientServicingInformation { information { lastAttemptedContact, responded, lastValueProvided, teamDivision { code label }, serviceTeam { members { name email role { code label } } } } }` — authoritative contact dates (LAC/LCR) and assigned service rep info
+- `contentGenActivity { lastCompletedAt, lastPageType }` — last Client Hub content automation run (Geo/FAQ/Blog only)
+- `retention { latestSaveEvent { savedAt } }` — most recent save from a prior cancellation
+- `billing { paymentStatus }` — CURRENT | PAST_DUE (null until Falcon dev resolves permissions; wired up, field exists in query)
+
+**LAC vs LCR distinction:** LAC (`lastAttemptedContact`) = every call attempt including voicemails. LCR (`responded`) = date client actually held a real conversation with TSI. These replace ticket `updatedAt` as the authoritative contact signal throughout the pipeline.
+
+**New FalconClient fields:** `paymentStatus`, `servicing: ClientServicingInfo | null`, `contentGenActivity: ContentGenActivity | null`, `latestSaveEvent: { savedAt: string | null } | null`.
+
+**New types in types/report.ts:** `TeamMember`, `ClientServicingInfo`, `ContentGenActivity`, `DudaPage`.
+
+### lib/platforms/duda.ts
+
+**Page inventory passthrough (added):** `getDudaData` now returns `pages: DudaPage[]` — full page list with `{ title, path }` for each site page. Previously only `totalPages: number` (count) was returned. The Duda pages endpoint was already being called; titles and paths were discarded. Used by analyst to classify page types (service, geo, FAQ, blog) and make specific content recommendations.
+
+**DudaSiteStats updated:** New field `pages: DudaPage[]` added alongside existing `totalPages: number`.
+
+### lib/retention/gap-auditor.ts
+
+**LAC/LCR in service dimension (updated):** `service` snapshot now includes `lastAttemptedContact`, `daysSinceLAC`, `lastClientResponse`, `daysSinceLCR`, `teamDivision`, `serviceTeam`. `daysSinceLastTouchpoint` (which was incorrectly based on ticket `updatedAt`) renamed to `daysSinceLastTicketUpdate` and demoted to secondary signal only.
+
+**Contact story framing (added to prompt):** Model now distinguishes between "TSI not calling" (tsiOwned=true, real gap) and "client not answering" (tsiOwned=false, client avoidance pattern). Critical for avoiding false service-gap flags on accounts where TSI is actively calling but the client is unresponsive.
+
+**Ticket subject reading (added to prompt):** Model now instructed to read ticket `subject` text when assessing whether an open ticket is a real service gap — not just the `type` field. AE Request tickets with subjects indicating radio market referrals are explicitly called out as NOT service failures. General principle: use the actual request context, not surface-level type matching.
+
+**contentGenActivity in snapshot (added):** Client Hub automation signal passed through with explicit note that it is NOT the full content picture — Duda is source of truth for all site content.
+
+### lib/retention/analyst.ts
+
+**12-point prompt overhaul (2026-05-28 v2):**
+1. **LAC/LCR contact story** — servicing block added to snapshot; model instructed to distinguish TSI-not-calling from client-not-answering; team member names surfaced
+2. **No mea culpa** — explicit rule: never write language implying TSI failed the client as a stated fact; forward-looking commitments only
+3. **Billing decline playbook** — if paymentStatus=PAST_DUE, fix-payment-first framing before value conversation; billing decline + long tenure → likely cashflow issue not value dissatisfaction
+4. **Specific content types** — service pages, geo pages, FAQ pages, hyper-local blog posts named explicitly; websitePageInventory field shows actual current pages; model told to identify what type is missing and recommend it specifically
+5. **GBP zero vs unavailable** — null GBP = fetch failed (flag as setup issue, do NOT say "zero impressions"); GBP present with zeros = real data (content/optimization gap, TSI can address)
+6. **Named leads drive specific actions** — already in prompt; reinforced in opportunityActions rule
+7. **Competitor intelligence** — when competitor named in agentCancelNotes or cancellation history, analyst includes competitive positioning; no fabrication; "another vendor" framing in agent script
+8. **Cancellation urgency flag** — if pendingCancelDate within 7 days, flag "URGENT — cancellation scheduled within 7 days" in cancellationRisk
+9. **Second cancel tone change** — if priorCancelRequests > 0, sharper/more direct pitch; "You've come back to us before — what specifically would make this time different?"
+10. **Present-tense opportunityActions** — rules updated: write as forward-looking TSI commitments, not problem confessions
+11. **topRetentionHook** — must be confident, present-tense, specific statement with real number (not a question, not "What if we...")
+12. **websitePageInventory in snapshot** — `duda.pages.slice(0, 30)` added to analyst snapshot
+
+### lib/retention/formatter.ts
+
+**$1 pipeline artifact fix (added):** `pipelineAtRiskOverride` computed before passing to prompt. If `analyst.pipelineAtRisk < 50`, falls back to `monthlyPrice * 12` (annual subscription value). Prevents "$1 pipeline" or "$0 pipeline" from being stated as a client asset figure when vcita pipeline is genuinely empty for non-V or early-stage V clients.
+
+**S2 speakability constraint (added to prompt):** Every sentence in agentScript (Section 2) must be speakable in a single breath. Max 15 words per sentence. No compound clauses. Tested: if a sentence has more than one comma, break it into two.
+
+**Competitors extraction (added):** Formatter prompt now instructs the model to populate `competitors: string[]` in the output JSON — actual named business/brand competitors from cancel reason or analyst findings. Empty array if none named. Used by MongoDB for future competitive intelligence aggregation.
+
+**buildFormatterPrompt signature:** Added `pipelineAtRiskOverride: number` parameter. Two hardcoded `${analyst.pipelineAtRisk}` references replaced with `${pipelineAtRiskOverride}`.
+
+### lib/retention/store.ts
+
+**competitors field (added):** `RetentionEventDoc` now includes `competitors?: string[]` — array of named competitors extracted by the formatter. Persisted to MongoDB for future competitive intel. Wired in `route.ts`: `competitors: retentionBrief?.competitors ?? []`.
+
+### lib/retention/types.ts
+
+**RetentionBrief.competitors (added):** `competitors?: string[]` — optional array of named competitors. Populated by formatter, stored in MongoDB.
+
+### app/api/retention/route.ts
+
+**competitors wired to MongoDB doc (added):** `competitors: retentionBrief?.competitors ?? []` added to `RetentionEventDoc` write.
+
+---
+
+## lib/retention/types.ts
+
+**Purpose:** All TypeScript types for the retention pipeline. Single source of truth — imported by analyst, gap-auditor, formatter, note-writer, store, and route.
+
+**Key types:**
+
+- `FetchedData` — output of Agent 1 (fetcher): `{ client: FalconClient, activities: ActivityData, gbp, gbpReviews, duda, yext, vcita, soci, conversations, dataErrors }`
+- `AnalystOutput` — output of Agent 2: retention reasoning, bespoke analysis. Includes `competitiveBenchmark`, `competitors`, `pipelineAtRisk`, `monthlyPrice`, `lossAssets`, `opportunityActions`, `topRetentionHook`, `urgencyFlag`, `cancellationType`
+- `GapAuditResult` — output of Agent 4: 10-dimension account health index. **Updated 2026-05-28:** Added `prioritizedGaps: PrioritizedGap[]` (ranked list of actionable gaps with dimension, description, severity, tsiOwned flag) and `topGap: string` (single most important gap in one sentence). These fields power the top-gaps footer in the Freshdesk note (Section 3).
+- `RetentionBrief` — output of Agent 3 (formatter): `{ agentBrief, section1, section2, section3 }`. Includes `competitors: string[]` (added 2026-05-28) — competitor names mentioned by client, stored to MongoDB for trend analysis.
+- `PrioritizedGap` — `{ dimension: string, description: string, severity: 'high' | 'medium' | 'low', tsiOwned: boolean }`
+- `FinancialOption` — one step in the Section 3 escalation sequence: `{ type, label, requiresManagerApproval, eligibility, agentScript }`
+- `CommitmentTerms`, `ScheduledCancellation`, `FalconBillingEvent`, `FalconCancellationEvent` — Falcon subscription and history shapes
+- `ClientServicingInfo` — LAC/LCR servicing data from Falcon (added 2026-05-28)
+- `ContentGenActivity` — content generation activity from Falcon (added 2026-05-28)
+
+---
+
+## types/report.ts
+
+**Purpose:** Public TypeScript types for the `/api/report` route and shared platform data shapes. Imported by platform files and the report route.
+
+**Key types:** `ReportData`, `GbpInsights`, `GbpReview`, `DudaPage`, `DudaSiteStats`, `YextData`, `VcitaData`, `SociData`, `SociTopPost`, `SociSentiment`, `SociPeakHour`, `SociDemographics`
+
+**SociTopPost (corrected 2026-05-28):** `{ id, message, impressions, impressionsOrganic, impressionsViral, engagedUsers, postClicks, scheduledTime }` — field names must match `lib/platforms/soci.ts` exactly. Earlier reconstruction used wrong names (engagements, createdTime) causing TypeScript errors.
+
+**DudaPage (used in report only):** `{ id, title, path, seo_enabled }` — NOT the same as `RawDudaPage` in `lib/platforms/duda.ts`. The `duda.ts` fetch uses `RawDudaPage` locally; results are typed as `DudaPage` on the way out.
+
+---
+
+## Changelog — 2026-05-28 (Session 2) — Falcon Field Expansion
+
+### types/report.ts
+
+**`ScheduledCancellation` (updated):** Added `competitor: string | null` (competitor named in the current cancel request) and `saveSolutions: string | null` (comma-separated list of retention solutions already offered in this cancel event).
+
+**`FalconCancellationEvent` (updated):** Added `competitor: string | null`, `saveSolutions: string | null`, `savedBy: string | null` (rep name who saved the account), `savedAt: string | null` (ISO date of save), `lifecycleAction: string | null` (Falcon lifecycle action label). All sourced from `CancellationLifecycleItem` fields in the Falcon GraphQL schema.
+
+**`FalconClient` (updated):** Added `vertical: string | null` (business type slug from `business.vertical`, e.g. "tree_service", "painting") and `gccDate: string | null` (Go-Current-Client date — the date of the onboarding call, often null).
+
+**`ActivityTicket` (updated):** Added `body: string | null` — full ticket body text, used by gap auditor to make content-based gap decisions (e.g., determining whether an "AE Request" is a radio market referral vs. a real service issue).
+
+### lib/falcon.ts
+
+**`CLIENT_QUERY` (updated):** Now fetches `gccDate`, `business { vertical }`, `scheduledCancellation { competitor saveSolutions savedBy savedAt cancelCreatedDate }`, and `CancellationLifecycleItem` with `competitor`, `saveSolutions`, `savedBy`, `savedAt`, `lifecycleAction`. Also fetches `Ticket.body` for ticket content reading.
+
+**`RawFalconClient` (updated):** Added `gccDate` and `business: { vertical: string | null }` fields.
+
+**`RawCancellationLifecycleItem` (updated):** Added `competitor`, `saveSolutions`, `savedBy`, `savedAt`, `lifecycleAction`.
+
+**`cancellationHistory` extraction (updated):** Map now extracts all new fields from `CancellationLifecycleItem`. `competitor` coerced via `|| null` (Falcon returns `""` not null when blank). `saveSolutions`, `savedBy`, `savedAt`, `lifecycleAction` extracted directly.
+
+**`scheduledCancellation` extraction (updated):** `competitor` and `saveSolutions` added to the extracted object from `ScheduledCancellation`.
+
+**`FalconClient` construction (updated):** `vertical: raw.business?.vertical ?? null` and `gccDate: raw.gccDate ?? null` added. `recentTickets` map now includes `body: t.body ?? null`.
+
+### lib/retention/analyst.ts
+
+**Client snapshot (updated):** `client` object in snapshot now includes `vertical` (business type slug) and `gccDate` (onboarding call date). Both documented with inline comments for model clarity.
+
+**`cancellationIntel` block (new):** Added to snapshot after `paymentStatus`:
+- `competitor`: named competitor from current cancel request (`scheduledCancellation.competitor`)
+- `saveSolutionsOffered`: what was already tried in this cancel event (`scheduledCancellation.saveSolutions`)
+- `priorCancelCount`: count of prior cancel requests in history
+- `priorSaves`: up to 3 most recent saves with date, savedBy, saveSolutions, competitor
+
+**COMPETITOR INTELLIGENCE prompt rule (updated):** Primary source is now `cancellationIntel.competitor` (Falcon data from the cancel request) — check this first. `agentCancelNotes` and cancel reason are secondary. If `cancellationIntel.competitor` is non-null, use the exact name and include in competitors array.
+
+**SAVE SOLUTIONS rule (new):** Model is instructed not to recommend any solution appearing in `cancellationIntel.saveSolutionsOffered` or `priorSaves[].saveSolutions` — it has already been tried. If a financial offer was already made, pivot to value demonstration instead of offering another discount.
+
+**COMPETITIVE POSITION rule (updated):** Notes that `client.vertical` slug can be used to look up the correct benchmark row directly from the context tables — no need to guess the vertical from the business name or market.
+
+### lib/retention/gap-auditor.ts
+
+**Client snapshot (updated):** `client` object now includes `vertical: client.vertical` (business type slug).
+
+**`openTicketDetails` map (updated):** Now includes `body: t.body?.slice(0, 300).trim() ?? null` — truncated ticket body text for gap classification.
+
+**`cancellationHistory` snapshot (updated):** Now includes:
+- `competitorsNamed`: array of competitor names across all history events (pattern intelligence)
+- `priorSaveSolutions`: array of `{ date, saveSolutions, savedBy }` from prior saves (what was tried before)
+- `currentScheduledCancellation`: object now includes `competitor` and `saveSolutions` fields inline
+
+**Cancellation History benchmark table (updated):** Added rows for `competitorsNamed`, `priorSaveSolutions`, `currentScheduledCancellation.saveSolutions`, and `currentScheduledCancellation.competitor`.
+
+**`cancellation_history` output dimension (updated):** `actual` object now includes `competitorsNamed`, `currentCompetitor`, and `saveSolutionsAlreadyOffered`. Narrative and action instructions updated to surface competitor name and warn the CSR if prior save solutions have already been exhausted.
+
+**TICKET SUBJECT + BODY READING rule (updated):** Model now reads both `subject` AND `body` when classifying open tickets as real service gaps vs. workflow art
