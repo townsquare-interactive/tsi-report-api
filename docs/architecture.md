@@ -25,7 +25,7 @@ GPID (e.g. "TI ROOFIN047")
   │
   ▼ Step 3: GBP Location Resolution (4 fallback levels)
       a) Agency account + Place ID filter
-      b) Agency account + storeCode = {GPID_no_spaces}-001  (e.g. TIROOFIN047-001)
+      b) Agency account + storeCode = {GPID}-001  — SPACES PRESERVED (e.g. "TI ROOFIN047-001")
       c) Agency account + title filter (fragile)
       d) Client own Google account + title (safety net)
       → gbpLocationId (null if all 4 fail)
@@ -33,8 +33,9 @@ GPID (e.g. "TI ROOFIN047")
 
 **GBP Agency Account:** `accounts/105329348540167006988` (9,638 TSI locations)
 **GBP OAuth:** `gbp.agency@townsquaredigital.com` — credentials in `tsi/mcp/gbp` (AWS Secrets Manager)
-**StoreCode format:** `{GPID_no_spaces}-001` — e.g. `TI ROOFIN047` → `TIROOFIN047-001`
-**Auth fixed:** 2026-05-21 — see `docs/integrations/gbp-auth-brief.md` or Obsidian `Integrations/gbp-auth-brief`
+**StoreCode format:** `{GPID}-001` — spaces preserved — e.g. `TI ROOFIN047` → `TI ROOFIN047-001`
+**Auth fixed:** 2026-05-21 — see Obsidian `Integrations/gbp-auth-brief`
+**StoreCode confirmed:** 2026-06-01 — GBP Manager screenshot shows spaces in storeCode column
 
 ## Data Flow — `/api/report`
 
