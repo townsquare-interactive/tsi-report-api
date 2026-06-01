@@ -23,19 +23,23 @@ GPID (e.g. "TI ROOFIN047")
   │   → googlePlaceId (preferred GBP key)
   │   → googleAccountId (fallback)
   │
-  ▼ Step 3: GBP Location Resolution (4 fallback levels)
-      a) Agency account + Place ID filter
-      b) Agency account + storeCode = {GPID}-001  — SPACES PRESERVED (e.g. "TI ROOFIN047-001")
-      c) Agency account + title filter (fragile)
-      d) Client own Google account + title (safety net)
-      → gbpLocationId (null if all 4 fail)
+  ▼ Step 3: GBP Location Resolution (6 fallback levels)
+      a) Agency account + Place ID filter (exact — preferred)
+      b) Agency account + storeCode "{GPID}-001" (spaces preserved, e.g. "TI ROOFIN047-001")
+      c) Agency account + storeCode "{GPID_no_spaces}-001" (e.g. "TIROOFIN047-001" — older clients)
+      d) Agency account + title exact match (fragile — name mismatches cause nulls)
+      e) Agency account + title-contains match (partial name — handles "Eash Co. LLC" vs "Eash Co.")
+      f) Client own Google account + title (last resort — usually inaccessible)
+      → gbpLocationId (null if all 6 fail — client not in agency account)
 ```
 
 **GBP Agency Account:** `accounts/105329348540167006988` (9,638 TSI locations)
 **GBP OAuth:** `gbp.agency@townsquaredigital.com` — credentials in `tsi/mcp/gbp` (AWS Secrets Manager)
-**StoreCode format:** `{GPID}-001` — spaces preserved — e.g. `TI ROOFIN047` → `TI ROOFIN047-001`
+**StoreCode formats:** Both tried — `{GPID}-001` (spaces) AND `{GPID_no_spaces}-001` (no spaces)
 **Auth fixed:** 2026-05-21 — see Obsidian `Integrations/gbp-auth-brief`
-**StoreCode confirmed:** 2026-06-01 — GBP Manager screenshot shows spaces in storeCode column
+**StoreCode note (2026-06-01):** TSI has mixed storeCode history. Some clients have numeric CIDs as storeCode (e.g. Eash Co. = `02378400463851801322`) — those are found via title-contains fallback.
+
+**GBP null = client has not granted TSI agency account manager access.** Not a code error — operational gap requiring client action.
 
 ## Data Flow — `/api/report`
 
@@ -74,7 +78,7 @@ All credentials in **AWS Secrets Manager (us-east-1)** under `tsi/` namespace.
 
 | File | Purpose |
 |------|---------|
-| `lib/resolve.ts` | GPID → all platform IDs (GBP resolution chain) |
+| `lib/resolve.ts` | GPID → all platform IDs (full GBP resolution chain) |
 | `lib/platforms/gbp.ts` | GBP insights, reviews, search keywords |
 | `lib/retention/analyst.ts` | Agent 2: retention reasoning + pitchFrame |
 | `lib/retention/formatter.ts` | Agent 3: three-section CSR brief |
