@@ -2,68 +2,71 @@
 
 ## Overview
 
-Single Next.js API route that accepts a Falcon client ID and returns a compiled JSON report pulling data from all TSI platform integrations. Purpose: give any TSI developer a single endpoint to retrieve all report data for a given client without needing to build their own MCP or platform connections.
+Two-endpoint Next.js API for client intelligence and retention automation. All platform IDs are auto-resolved from a GPID — no manual ID passing required.
 
-## Endpoint
-
-```
-GET /api/report?clientId=129598&days=30&gbpLocationId=locations/9343709211746831348
-```
-
-### Parameters
-| Param | Required | Description |
-|-------|----------|-------------|
-| `clientId` | Yes | Falcon internal client ID (e.g. `129598` for Casa Edit Studios) |
-| `days` | No | Reporting period in days (default: 30, max: 365) |
-| `gbpLocationId` | No | GBP location resource name. If omitted, GBP data is skipped. |
-
-## Data Flow
+## Endpoints
 
 ```
-Request
+GET  /api/report?gpid=TI+HDHAUL001&days=30       — Full platform report (GBP, Yext, vcita, Duda, Freshdesk)
+POST /api/retention                               — 5-agent AI retention brief (webhook or manual curl)
+```
+
+## GPID Resolution Chain (`lib/resolve.ts`)
+
+Every request starts with a GPID and resolves all platform IDs automatically:
+
+```
+GPID (e.g. "TI ROOFIN047")
+  │
+  ▼ Step 1: Falcon GraphQL
+  │   filter: { externalServiceId: { gpId: $gpid } }
+  │   → clientId, vcitaId, dudaSiteName, businessName
+  │
+  ▼ Step 2: Yext Entity Lookup (non-fatal)
+  │   account: {GPID_no_spaces}, entity: {GPID_no_spaces}-001
+  │   → googlePlaceId (preferred GBP key)
+  │   → googleAccountId (fallback)
+  │
+  ▼ Step 3: GBP Location Resolution (4 fallback levels)
+      a) Agency account + Place ID filter (exact, fast — preferred)
+      b) Agency account + storeCode = {GPID_no_spaces}-001  (e.g. TIROOFIN047-001)
+      c) Agency account + title filter (fragile — name mismatch = null)
+      d) Client's own Google account + title (safety net)
+      → gbpLocationId (null if all 4 fail — GBP fetch is skipped)
+```
+
+**GBP Agency Account:** `accounts/105329348540167006988` (9,638+ TSI client locations)
+**GBP OAuth account:** `gbp.agency@townsquaredigital.com` — credentials in AWS Secrets Manager `tsi/mcp/gbp`
+**StoreCode format:** `{GPID_no_spaces}-001` — e.g. `TI ROOFIN047` → `TIROOFIN047-001` ✓ confirmed in GBP Manager
+
+**Known issue (2026-06-01):** GBP returning null for all clients — suspected OAuth refresh token expiry.
+Diagnosis: check Vercel logs for `[GBP] OAuth token refresh FAILED` entries.
+Fix: update refresh token in AWS Secrets Manager `tsi/mcp/gbp`.
+
+## Data Flow — `/api/report`
+
+```
+resolveFromGpid(gpid) → clientId, vcitaId, dudaSiteName, gbpLocationId
+  │
+  ▼ (parallel via Promise.allSettled)
+┌─────────────────────────────────────────────────────────────┐
+│  GBP insights  │  Duda stats  │  Yext listings  │  vcita  │
+└─────────────────────────────────────────────────────────────┘
+  + Falcon GraphQL (full client metadata)
   │
   ▼
-Falcon GraphQL ──► Gets: client name, status, GPID, Freshdesk ID, vcita ID
-  │
-  ▼ (parallel)
-┌─────────────────────────────────────────────────────┐
-│  GBP API   │  Duda API  │  Yext API  │  vcita API  │  Freshdesk API  │
-└─────────────────────────────────────────────────────┘
-  │
-  ▼
-Compiled JSON response (errors captured per platform, never blocks others)
+Compiled ReportData JSON — errors captured per platform, never blocking others
 ```
 
-## Credential Architecture
+## Data Flow — `/api/retention`
 
-All platform credentials are stored in **AWS Secrets Manager (us-east-1)** under the `tsi/` namespace. The only env vars needed at the Vercel project level are the AWS IAM access key pair.
-
-| Secret Name | Contents |
-|-------------|----------|
-| `tsi/mcp/falcon` | Falcon GraphQL API key + endpoint |
-| `tsi/mcp/gbp` | GBP OAuth client ID, client secret, refresh token |
-| `tsi/mcp/duda` | Duda API username + password |
-| `tsi/mcp/yext` | Yext API key + account ID |
-| `tsi/mcp/vcita` | vcita API token |
-| `tsi/mcp/freshdesk` | Freshdesk API key + domain |
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `app/api/report/route.ts` | Main API route — orchestrates all fetches |
-| `lib/secrets.ts` | AWS Secrets Manager client with per-platform accessors |
-| `lib/falcon.ts` | Falcon GraphQL client — GPID/platform ID lookup |
-| `lib/platforms/gbp.ts` | GBP insights + reviews |
-| `lib/platforms/duda.ts` | Duda site stats |
-| `lib/platforms/yext.ts` | Yext listings data |
-| `lib/platforms/vcita.ts` | vcita leads, invoices, bookings |
-| `lib/platforms/freshdesk.ts` | Freshdesk tickets |
-| `types/report.ts` | TypeScript types for all response shapes |
-
-## Known Limitations (v1)
-
-- **GBP location ID**: Must be passed as a query param. Future: build a GPID → GBP location ID mapping table.
-- **Duda site lookup**: Searches by client name (substring). If name doesn't match, returns error in the `errors` field.
-- **Yext location lookup**: Searches by GPID as external ID or client name. May miss if neither matches.
-- **Response is not cached**: Every call hits all platform APIs. Add Redis or Vercel KV caching once stable.
+```
+POST body: { id, type, custom_fields.cf_gf_gpid, description_text }
+  │
+  ▼ Dedup gate (MongoDB — skip if brief < 7 days old; bypass with forceRefresh=true)
+  │
+  ▼ Agent 1: Fetcher (no model)
+  │   resolveFromGpid → fetchClientData (Falcon + all platforms) + getTicketConversations
+  │   (both run in parallel via Promise.allSettled)
+  │
+  ▼ Agents 2 + 4: An
