@@ -207,9 +207,10 @@ async function getGbpLocationId(
   }
 
   // 2. StoreCode lookup: GPID with spaces removed + "-001" (e.g. "TI JULEEA001" → "TIJULEEA001-001")
-  // StoreCode format: {GPID with spaces removed}-001 (e.g. "TI ROOFIN047" → "TIROOFIN047-001")
-  // Confirmed correct in gbp-auth-brief.md 2026-05-21 — the screenshot showed display formatting, not stored format
-  const storeCode = gpid.replace(/\s+/g, '') + '-001';
+  // StoreCode format: {GPID}-001 — spaces PRESERVED (e.g. "TI ROOFIN047" → "TI ROOFIN047-001")
+  // Confirmed by GBP Manager screenshot 2026-06-01: store code column shows "TI ROOFIN047-001" with space
+  // auth-brief.md said no-spaces but that was wrong — JULEEA001 works via Place ID (step 1), not storeCode
+  const storeCode = gpid + '-001';
   const encodedStoreCode = encodeURIComponent(`storeCode="${storeCode}"`);
   const scRes = await fetch(
     `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${encodedStoreCode}`,
