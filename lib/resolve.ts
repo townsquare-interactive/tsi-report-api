@@ -18,7 +18,7 @@
 
 import { getFalconCredentials, getGbpCredentials, getYextCredentials } from './secrets';
 
-const GBP_TSI_ACCOUNT = 'accounts/105329348540167006988'; // Agency Account (9,638 locations)
+const GBP_TSI_ACCOUNT = 'accounts/105184842354302665018'; // Agency Account (GBP TSI — confirmed via MCP 2026-06-01; old ID 105329348540167006988 returned 404)
 const YEXT_BASE = 'https://api.yextapis.com/v2';
 const YEXT_API_VERSION = '20230301';
 
@@ -242,5 +242,4 @@ export async function resolveFromGpid(gpid: string): Promise<ResolvedParams> {
   // Step 3: GBP — Place ID → storeCode → name → client account fallback
   const gbpLocationId = await getGbpLocationId(gpid, businessName, googleAccountId, googlePlaceId).catch(() => null);
 
-  return { clientId, vcitaId, dudaSiteName, gbpLocationId, businessName };
-}
+  return 
