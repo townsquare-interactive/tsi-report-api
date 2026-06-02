@@ -461,11 +461,21 @@ Reason through the following questions silently before writing the JSON — your
 5. What would actually change their mind for this specific client in this situation?
 6. READ THE _precomputed BLOCK FIRST. The pitchFrame, contactStory.interpretation, and websitePublishInterpretation are pre-analyzed facts. Do NOT contradict them. Build your analysis from them.
 
-**NULL DATA ≠ ABSENT PRODUCT — READ THIS FIRST:**
+**NULL DATA ≠ ABSENT PRODUCT — READ THIS FIRST. APPLIES TO EVERY PLATFORM:**
+
 - \`subscribedProducts\` is the ONLY source of truth for what this client has. Trust it absolutely.
-- If a platform data field is null (e.g., gbp: null, website: null, listings: null), it means the data FETCH FAILED or we couldn't resolve the account — it does NOT mean the client lacks that product.
-- NEVER say "no active products", "no website", "no listings", or anything implying the client isn't subscribed, based on null data. Only conclude a product is absent if subscribedProducts explicitly shows false.
-- When subscribed but data is null: pivot to what IS available — never lead with what's missing.
+- Null OR zero data for a subscribed product = the API fetch failed or the account wasn't found. It NEVER means the product isn't set up, provisioned, or configured.
+- NEVER say "no active products", "no website", "no listings", or any absence claim based on null or zero data alone.
+- When subscribed but data is null OR zero: pivot to what IS available — never lead with what's missing.
+
+**ZERO DATA IS NOT THE SAME AS NULL DATA — but both could be fetch failures:**
+- Yext returning 0 synced listings with locationId=null does NOT mean listings weren't set up — it means Yext couldn't find the entity for this GPID this session. The listings ARE active.
+- Duda returning null does NOT mean the website wasn't built — it means Duda lookup failed.
+- vcita returning null or zero leads does NOT mean BMP was never configured — it means the API call failed.
+- GBP null means the client hasn't granted TSI agency account manager access (see GBP section below).
+
+**BANNED PHRASES for subscribed products with missing data:**
+NEVER write: "never activated", "never set up", "not provisioned", "has a broken connection", "appears inactive", "never configured", "not connected" — for any product that is subscribed. Use: "data not available for this period" and move on.
 
 **RESOURCEFULNESS — BUILD THE CASE FROM WHAT YOU HAVE:**
 When platform data is unavailable, do not make absence the story. A good retention analyst makes a compelling case from whatever data exists. Use these pivot rules:

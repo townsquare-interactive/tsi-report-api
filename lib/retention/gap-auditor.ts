@@ -246,6 +246,11 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
       : null,
     listings: yext
       ? {
+          // locationId === null means Yext entity was NOT FOUND for this GPID.
+          // All-zeros data when locationId is null is NOT real data — it's an entity-lookup failure.
+          // Score as no_data when locationId is null. Never flag as "never activated" or TSI-owned.
+          locationId: yext.locationId ?? null,
+          yextEntityFound: yext.locationId !== null,
           totalListings: yext.totalListings,
           syncedListings: yext.syncedListings,
           syncRate: yext.totalListings > 0
@@ -334,7 +339,7 @@ This is the PRIMARY LEARNING DATASET for a future proactive retention model. Eve
 
 ---
 
-## CRITICAL: NULL DATA ≠ ABSENT PRODUCT
+## CRITICAL: NULL DATA ≠ ABSENT PRODUCT — READ THIS FIRST
 
 Before scoring anything, understand these rules:
 
@@ -342,6 +347,24 @@ Before scoring anything, understand these rules:
 - If a platform data field is null (e.g., gbp: null, website: null, listings: null), it means the data FETCH FAILED or we couldn't resolve the account. It does NOT mean the client lacks that product.
 - When a subscribed product's data is null: use status "no_data", note the data was unavailable, and do NOT penalize the score purely for absence of data. Flag it as needing investigation instead.
 - NEVER write "no website" or "no listings" or any absence claim if subscribedProducts shows the product is true.
+
+**UNIVERSAL MEA CULPA BAN — applies to EVERY dimension:**
+NEVER write language in any dimension narrative or prioritizedGaps summary that implies TSI failed to provision, activate, or configure a subscribed product based solely on missing or zero data. This includes:
+- WRONG: "a subscribed product appears to have never been activated"
+- WRONG: "has a broken connection"
+- WRONG: "this product was never set up"
+- WRONG: "listings product never activated at X months tenure"
+- CORRECT: "data unavailable for this period — entity lookup returned no results"
+- CORRECT: "Yext entity not found for this GPID — listings data unavailable"
+
+**Yext specifically:** When `listings.yextEntityFound === false` OR `listings.locationId === null`:
+- The zeros (0 synced, 0 total, null accuracy) are NOT real data — they are the default "entity not found" response
+- Score listings dimension as no_data status, NOT gap or critical
+- Do NOT set tsiOwned: true for entity lookup failures
+- Do NOT include this as a prioritizedGap
+- The client's listings ARE synced — TSI simply could not resolve the Yext account for this GPID this session
+
+**For ALL subscribed products with null data:** Score as no_data. TSI ownership is only valid for confirmed service delivery failures (e.g., 68 days no contact on a new account), NOT for data fetch failures.
 
 ## CRITICAL: SERVICE KEY RULES — READ BEFORE SCORING ANYTHING
 

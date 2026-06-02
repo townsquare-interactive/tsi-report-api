@@ -15,6 +15,18 @@ import { getYextData } from '@/lib/platforms/yext';
 import { getGbpInsights, getGbpReviews } from '@/lib/platforms/gbp';
 import { getSociData } from '@/lib/platforms/soci';
 
+// Simple retry wrapper — 1 retry with 1s delay for transient platform API failures.
+// Keeps platform data fetch failures from being misread as "product not provisioned."
+async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    console.warn(`[Fetcher] ${label} failed on first attempt, retrying in 1s...`);
+    await new Promise(r => setTimeout(r, 1000));
+    return fn();
+  }
+}
+
 export async function fetchClientData(gpid: string, periodDays: number): Promise<FetchedData> {
   // Step 1: Resolve all platform IDs from GPID
   const resolved = await resolveFromGpid(gpid);
@@ -35,9 +47,9 @@ export async function fetchClientData(gpid: string, periodDays: number): Promise
   const [gbpResult, gbpReviewsResult, dudaResult, yextResult, vcitaResult, sociResult] = await Promise.allSettled([
     gbpLocationId ? getGbpInsights(gbpLocationId, periodDays) : Promise.resolve(null),
     gbpLocationId ? getGbpReviews(gbpLocationId) : Promise.resolve([]),
-    dudaSiteName ? getDudaData(dudaSiteName, periodDays) : Promise.resolve(null),
-    getYextData(gpid, periodDays),
-    vcitaId ? getVcitaData(vcitaId, periodDays) : Promise.resolve(null),
+    dudaSiteName ? withRetry(() => getDudaData(dudaSiteName, periodDays), 'Duda') : Promise.resolve(null),
+    withRetry(() => getYextData(gpid, periodDays), 'Yext'),
+    vcitaId ? withRetry(() => getVcitaData(vcitaId, periodDays), 'vcita') : Promise.resolve(null),
     hasSocialKey ? getSociData(gpid, businessName) : Promise.resolve(null),
   ]);
 

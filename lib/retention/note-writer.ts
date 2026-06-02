@@ -204,9 +204,23 @@ export async function writeRetentionNote(
   const atRisk = computeAtRiskHeader(brief.pipelineAtRisk, monthlyPrice);
 
   // Pre-compute top gaps for the footer (TypeScript, not model)
-  const topGaps = gapAudit?.prioritizedGaps?.slice(0, 2).map(g =>
-    `${g.dimension.toUpperCase()}: ${g.summary}${g.tsiOwned ? ' [TSI-owned]' : ''}`
-  ) ?? [];
+  // Filter out any gap summaries that contain mea culpa language about provisioning —
+  // these come from fetch failures misread as setup failures by the gap auditor model.
+  // The agent should never see "never activated" or "broken connection" in the gap footer.
+  const MEA_CULPA_GAP_PATTERNS = [
+    /never activated/i,
+    /never been activated/i,
+    /broken connection/i,
+    /never set up/i,
+    /never provisioned/i,
+    /not provisioned/i,
+    /has a broken/i,
+    /appears to have never/i,
+    /never configured/i,
+  ];
+  const topGaps = (gapAudit?.prioritizedGaps?.slice(0, 2) ?? [])
+    .filter(g => !MEA_CULPA_GAP_PATTERNS.some(p => p.test(g.summary)))
+    .map(g => `${g.dimension.toUpperCase()}: ${g.summary}${g.tsiOwned ? ' [TSI-owned]' : ''}`);
 
   // Step 1: Haiku generates the narrative sections (agentBrief, S1, S2)
   const apiKey = getAnthropicApiKey();
