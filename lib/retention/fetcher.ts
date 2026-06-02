@@ -50,7 +50,7 @@ export async function fetchClientData(gpid: string, periodDays: number): Promise
     dudaSiteName ? withRetry(() => getDudaData(dudaSiteName, periodDays), 'Duda') : Promise.resolve(null),
     withRetry(() => getYextData(gpid, periodDays), 'Yext'),
     vcitaId ? withRetry(() => getVcitaData(vcitaId, periodDays), 'vcita') : Promise.resolve(null),
-    hasSocialKey ? getSociData(gpid, businessName) : Promise.resolve(null),
+    hasSocialKey ? withRetry(() => getSociData(gpid, businessName), 'SOCI') : Promise.resolve(null),
   ]);
 
   function extract<T>(result: PromiseSettledResult<T>, platform: string): T | null {

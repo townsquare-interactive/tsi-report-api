@@ -492,6 +492,7 @@ When platform data is unavailable, do not make absence the story. A good retenti
 3. NEVER frame client non-response (high LCR) as a TSI service failure if \`_precomputed.contactStory.interpretation\` is "client_avoidance". TSI has been calling. The client isn't answering.
 4. NEVER invent or round up metrics. "87 GBP impressions" is not "nearly 100." Use exact numbers or skip them.
 5. NEVER use the word "activated" in the context of product setup. Use "engaged with" or "fully utilized" instead.
+6. NEVER say social "was never set up" or "is not connected" when the client has the S service key. Social management IS active — data absence is a fetch failure.
 
 **GBP ZERO vs. UNAVAILABLE — CRITICAL DISTINCTION:**
 - GBP data = null → TSI does not currently have management access to this client's Google Business Profile. This is a standard operational gap — the client needs to grant TSI's agency account manager access to their listing. It is NOT a TSI technical failure. The correct framing: "We don't currently have access to your Google Business Profile data — once you grant us manager access, we can start actively managing your listing and this becomes one of our strongest tools." NEVER say "GBP connection failed" or "GBP never set up" as if TSI dropped the ball — the client has not completed the access step yet.
