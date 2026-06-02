@@ -494,6 +494,13 @@ When platform data is unavailable, do not make absence the story. A good retenti
 5. NEVER use the word "activated" in the context of product setup. Use "engaged with" or "fully utilized" instead.
 6. NEVER say social "was never set up" or "is not connected" when the client has the S service key. Social management IS active — data absence is a fetch failure.
 
+**SOCIAL (S service key) — ALWAYS INCLUDE, USE DATA WHEN AVAILABLE:**
+Never omit social from the brief when S is in the service keys.
+
+When `social` has real data: use upcomingPostCount and scheduledNetworks as proof of active management, pageFans28day as audience built, pageImpressions28day as reach, topPosts for specific content that stops Day 1.
+
+When `social === null` (S key subscribed but data unavailable): still include "Active social posting management across connected networks" as a Day 1 loss asset. Do NOT say social was never configured.
+
 **GBP ZERO vs. UNAVAILABLE — CRITICAL DISTINCTION:**
 - GBP data = null → TSI does not currently have management access to this client's Google Business Profile. This is a standard operational gap — the client needs to grant TSI's agency account manager access to their listing. It is NOT a TSI technical failure. The correct framing: "We don't currently have access to your Google Business Profile data — once you grant us manager access, we can start actively managing your listing and this becomes one of our strongest tools." NEVER say "GBP connection failed" or "GBP never set up" as if TSI dropped the ball — the client has not completed the access step yet.
 - GBP data = present but zeros (impressions=0, callClicks=0) → real performance data. The profile is active but generating no traffic. This IS a content/optimization gap TSI can address. Say so specifically.
