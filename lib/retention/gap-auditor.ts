@@ -357,7 +357,7 @@ NEVER write language in any dimension narrative or prioritizedGaps summary that 
 - CORRECT: "data unavailable for this period — entity lookup returned no results"
 - CORRECT: "Yext entity not found for this GPID — listings data unavailable"
 
-**Yext specifically:** When `listings.yextEntityFound === false` OR `listings.locationId === null`:
+**Yext specifically:** When listings.yextEntityFound === false OR listings.locationId === null:
 - The zeros (0 synced, 0 total, null accuracy) are NOT real data — they are the default "entity not found" response
 - Score listings dimension as no_data status, NOT gap or critical
 - Do NOT set tsiOwned: true for entity lookup failures
