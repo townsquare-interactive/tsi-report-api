@@ -103,7 +103,9 @@ function buildNotePrompt(
   clientName: string,
   agentNotes: string,
   productsLine: string,
-  atRisk: { label: string; value: string }
+  atRisk: { label: string; value: string },
+  enrichedAgentNotes: string = '',
+  saveabilityScore: string = 'Recoverable',
 ): string {
   const tsiServiceGapNote = gapAudit?.tsiServiceGap
     ? `⚠️ TSI SERVICE GAP — ${gapAudit.topGap}`
@@ -122,7 +124,8 @@ PRODUCT NAMING — CRITICAL: Never use vendor names. Always use TSI product name
 BREVITY RULES:
 - clientSnapshot: 1 bullet, max 20 words. Tenure + vertical + what's at stake.
 - cancelReasonRead: 1 bullet, max 15 words. The real reason, plainly stated.
-- leadWith: 1 bullet, max 20 words. Strongest hook — must include a specific number.
+- openingPosture: 1 bullet, max 20 words. Human acknowledgment of their situation — sets the tone for the FIRST 60 seconds BEFORE presenting any data. Not a data point. Example: "They're frustrated and haven't been followed up with — open by acknowledging that."
+- factsToDeployLater: 1 bullet, max 20 words. The strongest data point to introduce later as new information, NOT as a counter-argument. Example: "135 Map navigations — frame as: I want to share something you may not have seen."
 - verticalNote: 1 bullet, max 20 words. The one context point the agent needs about this type of business.
 - Notable highlights: 1-2 bullets max, 20 words each. Only include if genuinely notable — a strong GBP metric, high review count, significant lead count, or major platform gap. Skip if nothing stands out.
 - Section 1 agentScript: 2-3 sentences max. Opening with a specific number → what TSI will do → yes/no closing question.
@@ -136,7 +139,10 @@ ${isUnderContract ? '\nCONTRACT CLIENT: Put the contract callout FIRST in the Be
 Client: ${clientName}
 Tenure: ${brief.tenureMonths} months | ${atRisk.label}: ${atRisk.value}
 Products: ${productsLine || 'Unknown'}
-Agent notes: ${agentNotes || 'None'}
+Saveability: ${saveabilityScore}
+Agent notes at ticket creation: ${agentNotes || 'None'}
+${enrichedAgentNotes ? `Full ticket context (conversations + notes — use for Before You Dial opening posture):
+${enrichedAgentNotes}` : ''}
 ${tsiServiceGapNote ? `INTERNAL CONTEXT (for Before You Dial bullets only — NEVER put in scripts): ${tsiServiceGapNote}` : ''}
 
 Brief data (pull the actual content from here — do not paraphrase):
@@ -153,12 +159,15 @@ Write this EXACT HTML structure — fill every bracketed item with real content 
 <b>🔴 ${clientName.toUpperCase()} — RETENTION BRIEF</b><br>
 <b>Tenure:</b> ${brief.tenureMonths}mo &nbsp;|&nbsp; <b>${atRisk.label}:</b> ${atRisk.value}<br>
 <b>Products:</b> ${productsLine}<br>
+<b>Saveability:</b> <b>${saveabilityScore === 'Likely Lost' ? '🔴 Likely Lost' : saveabilityScore === 'High Save Probability' ? '🟢 High Save Probability' : '🟡 Recoverable'}</b><br>
+<i style="font-size:11px;color:#666">This brief is a starting point — adjust based on what you hear in the first 60 seconds.</i><br>
 <hr>
 ${brief.agentBrief?.contractNote ? `<b>${brief.agentBrief.contractNote}</b><br>` : ''}<b>📋 Before you dial:</b>
 <ul>
 <li><b>Snapshot:</b> [1-bullet clientSnapshot — max 15 words]</li>
 <li><b>Cancel read:</b> [1-bullet cancelReasonRead — max 12 words]</li>
-<li><b>Lead with:</b> [1-bullet leadWith — the hook, max 15 words]</li>
+<li><b>Opening posture:</b> [openingPosture — human acknowledgment, max 15 words, NOT data]</li>
+<li><b>Facts to deploy when relevant:</b> [factsToDeployLater — data point to introduce as new info, max 15 words]</li>
 <li><b>Context:</b> [1-bullet verticalNote — max 15 words]</li>
 ${brief.agentBrief?.tsiServiceNote || gapAudit?.tsiServiceGap ? `<li><b>⚠️ TSI:</b> [brief.agentBrief.tsiServiceNote or gapAudit topGap — 1 line max, internal context only, never in scripts]</li>` : ''}
 [If anything is genuinely notable from the data — strong GBP metrics, high review count, significant lead volume, or a major gap — add 1-2 <li><b>Notable:</b> [finding — max 20 words]</li> bullets here. Skip entirely if nothing stands out.]
@@ -197,6 +206,7 @@ export async function writeRetentionNote(
   agentNotes: string,
   serviceKeys: string[] = [],
   monthlyPrice: number | null = null,
+  enrichedAgentNotes: string = '',  // includes ticket conversation history for "Before you dial"
 ): Promise<{ noteId: number; noteUrl: string }> {
 
   // Pre-compute TypeScript-rendered header values
@@ -225,6 +235,10 @@ export async function writeRetentionNote(
   // Step 1: Haiku generates the narrative sections (agentBrief, S1, S2)
   const apiKey = getAnthropicApiKey();
 
+  const saveabilityScore = (brief as unknown as { saveabilityScore?: string }).saveabilityScore
+    ?? (gapAudit as unknown as { saveabilityScore?: string })?.saveabilityScore
+    ?? 'Recoverable';
+
   const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     signal: AbortSignal.timeout(60_000), // 1-min cap — Haiku is fast; hang = something wrong
@@ -238,7 +252,7 @@ export async function writeRetentionNote(
       max_tokens: 2000,  // S1+S2+brief only — Section 3 is TypeScript-rendered
       messages: [{
         role: 'user',
-        content: buildNotePrompt(brief, gapAudit, clientName, agentNotes, productsLine, atRisk),
+        content: buildNotePrompt(brief, gapAudit, clientName, agentNotes, productsLine, atRisk, enrichedAgentNotes, saveabilityScore),
       }],
     }),
   });

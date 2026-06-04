@@ -47,6 +47,8 @@ export interface AnalystOutput {
   pitchFrame: 'billing_first' | 'competitive_defense' | 'service_gap_own_and_fix' | 'value_proof' | 'urgency_window' | 'relationship_save';
   // Pre-computed contact story — prevents client avoidance from being misread as a TSI service gap
   contactStoryInterpretation: 'client_avoidance' | 'tsi_gap' | 'healthy' | 'unknown';
+  // Pre-computed saveability triage — helps agents allocate effort; computed from deterministic signals
+  saveabilityScore: 'High Save Probability' | 'Recoverable' | 'Likely Lost';
   competitors: string[];
   urgencyFlag: boolean;
   cancellationType: string;

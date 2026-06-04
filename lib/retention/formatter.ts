@@ -300,10 +300,12 @@ ${pitchFrame === 'billing_first' ? `BILLING FIRST: This client's cancel is roote
   - Frame it as TSI being persistent in trying to deliver value, not as TSI failing to call.
   - Lead with what TSI has been doing and what's waiting for them.` : ''}${pitchFrame === 'service_gap_own_and_fix' ? `SERVICE GAP OWN AND FIX: TSI has a genuine execution gap on this account.
   - Section 1 agentScript: ONE sentence acknowledging the specific gap, then immediately pivot to the specific commitment. No extended apology. Example: "We haven't kept your GBP active — I'm fixing that this week with [specific action]."
-  - The commitment must be concrete and happen within 7 days.` : ''}${pitchFrame === 'competitive_defense' ? `COMPETITIVE DEFENSE: Client is considering or switching to a named competitor.
-  - Don't attack the competitor by name in any client-facing script.
-  - Frame S1 around differentiation: what TSI offers that generic alternatives don't provide.
-  - Emphasize integrated platform, dedicated account management, established local authority.` : ''}${pitchFrame === 'urgency_window' ? `URGENCY WINDOW: Cancel date is within 7 days.
+  - The commitment must be concrete and happen within 7 days.` : ''}${pitchFrame === 'competitive_defense' ? `COMPETITIVE DEFENSE — 4-step playbook (follow in order):
+  1. Get the competitor's name first if not already known. Without it, the conversation is shadowboxing.
+  2. VALIDATE their conclusion, don't argue it. Script: "Clearly you think you'll be better off with them — price, service, or results. Let's think through all of them together."
+  3. Add the switching-cost dimension they may not have priced in: website transfer risk, rebuilding SEO from zero, losing leads/invoices/booking history in CRM, losing GBP posting continuity. DO NOT FABRICATE switching costs — only cite ones that genuinely apply to this client.
+  4. Pivot ask: "What if we could match or exceed what they're offering AND you don't take on the switching risk — would we have a chance?" Get explicit consent to attempt the save.
+  - Don't attack the competitor by name in client-facing scripts. Frame around what TSI provides, not what the competitor lacks.` : ''}${pitchFrame === 'urgency_window' ? `URGENCY WINDOW: Cancel date is within 7 days.
   - Open S1 with time awareness: "I'm reaching out because your account closes [date] — I want to make sure you've seen everything before that happens."
   - Value argument still leads — urgency sets the frame, brief delivers the case.` : ''}
 
@@ -323,7 +325,11 @@ DEMYSTIFY METRICS: When referencing numbers, always include the plain-English im
 
 NAMED LEADS: If the analyst mentions specific lead names (from recentLeadNames), use them. "People like [Name] and [Name] reached out through your website" is more compelling than "12 new leads."
 
-PRIORITY: Section 1 (Opportunity) is the most important output. The agentScript in Section 1 is what the agent says in the first 60 seconds of the call. It determines whether the client stays on the line. Make it specific, human, and grounded in real numbers — not marketing language. Reference actual data points from the analyst output. Avoid any sentence that could apply to a different client.
+PRIORITY: Section 1 (Opportunity) is the most important output. The default first move in S1 is ADDITIVE — what TSI can do MORE of or BETTER for this client. The improvement menu in the context document gives you the specific options; pick 2-3 most relevant to this client's stack, vertical, and stated issue. Expansion/improvement comes BEFORE risk-of-change framing (S2) and BEFORE financial concessions (S3) — always.
+
+The agentScript in Section 1 is what the agent says in the first 60 seconds of the call. After a brief human acknowledgment of their situation, it pivots to the additive opportunity. Make it specific, human, and grounded in real numbers — not marketing language. Reference actual data points from the analyst output. Avoid any sentence that could apply to a different client.
+
+When the stated reason is "too expensive" or "no ROI": the first move is NEVER a price cut — it's lifting the return side. Show them what more they could be getting. The discount is the LAST door, opened only when everything else has been explicitly rejected.
 
 Every section must feel bespoke. If you find yourself writing a generic sentence, stop and replace it with a specific one. The agent can tell when a script was generated from a template.
 

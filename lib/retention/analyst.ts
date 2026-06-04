@@ -207,6 +207,34 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     pitchFrame = 'value_proof';
   }
 
+  // Saveability triage — computed from deterministic signals, not model reasoning
+  // Purpose: help agents allocate effort; don't give a 30-min push to cases where graceful
+  // offboarding is the better play (e.g. business closing, decision already finalized)
+  const isClosingBusiness = !!(agentNotes?.toLowerCase().match(/closing|sold.*business|going.*out.*business|shut.*down/i));
+  const isDecisionFinalized = !!(agentNotes?.toLowerCase().match(/already.*switch|already.*sign|already.*moved|decision.*final|decision.*made|committed.*to/i));
+  const priorCancelCount = client.cancellationHistory?.filter(e =>
+    /request/i.test(e.event ?? '')
+  ).length ?? 0;
+  const priorSaveCount = client.cancellationHistory?.filter(e =>
+    /save|retain|kept/i.test(e.event ?? '')
+  ).length ?? 0;
+
+  type SaveabilityScore = 'High Save Probability' | 'Recoverable' | 'Likely Lost';
+  let saveabilityScore: SaveabilityScore;
+  if (isClosingBusiness) {
+    saveabilityScore = 'Likely Lost';
+  } else if (isDecisionFinalized && hasNamedCompetitor && priorCancelCount >= 1) {
+    saveabilityScore = 'Likely Lost';
+  } else if ((isPastDue || cancelReasonImpliesBilling) && !isDecisionFinalized) {
+    saveabilityScore = 'Recoverable'; // billing is fixable if not already walked
+  } else if (priorCancelCount === 0 && !hasNamedCompetitor && !isClosingBusiness) {
+    saveabilityScore = tenureMonths >= 12 ? 'High Save Probability' : 'Recoverable';
+  } else if (priorCancelCount >= 2 && priorSaveCount === 0) {
+    saveabilityScore = 'Likely Lost'; // repeat cancels with no successful saves
+  } else {
+    saveabilityScore = 'Recoverable';
+  }
+
   const isInCommitment = effectiveCancelDate ? new Date(effectiveCancelDate) > new Date() : false;
   const daysRemainingInCommitment = isInCommitment && effectiveCancelDate
     ? Math.ceil((new Date(effectiveCancelDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
@@ -415,6 +443,7 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     // ── Pre-computed interpretations (injected as facts — do NOT override these) ──
     _precomputed: {
       pitchFrame,
+      saveabilityScore,
       contactStory: {
         interpretation: contactStoryInterpretation,
         explanation: contactStoryExplanation,
@@ -460,6 +489,8 @@ Reason through the following questions silently before writing the JSON — your
 4. Why are they REALLY canceling? Check the pitchFrame in _precomputed — it already tells you the primary driver.
 5. What would actually change their mind for this specific client in this situation?
 6. READ THE _precomputed BLOCK FIRST. The pitchFrame, contactStory.interpretation, and websitePublishInterpretation are pre-analyzed facts. Do NOT contradict them. Build your analysis from them.
+7. READ THE TICKET CONVERSATIONS in agentCancelNotes carefully. Look for: prior complaints that were raised but never resolved, promises TSI made that weren't kept, the client's emotional tone (frustrated, resigned, open), and anything that was said but then NOT followed up on. This prior history shapes the entire opening posture for the call.
+8. Are there contradictions between stated and implicit signals? Examples: says "too expensive" but has never missed a payment → real issue is probably service or trust, not price. Says "no ROI" but has strong GBP traffic → might be operational (not converting leads). Flagging the contradiction helps the agent listen for the real driver instead of arguing about the stated one.
 
 **NULL DATA ≠ ABSENT PRODUCT — READ THIS FIRST. APPLIES TO EVERY PLATFORM:**
 
@@ -531,6 +562,18 @@ If estimateSample is present in the pipeline data, these are real proposals out 
 
 **REVIEW TEXT — QUOTE THE CLIENT'S OWN CUSTOMERS:**
 If reviews.samples contains comment text and reviewer names, use actual review language in the narrative. A business owner recognizes their own customers' words immediately. Use format: "[Reviewer] left a 5-star review saying '[quote]' — that's the reputation you've built in [market]." Truncate naturally at a sentence boundary. Never paraphrase or fabricate; only quote verbatim from the comment field. Skip if comment is null.
+
+**DATA IS NEW INFORMATION, NOT A REBUTTAL — CRITICAL:**
+When the stated cancel reason is "no ROI," "not seeing results," or "not worth it" — DO NOT frame data as an argument against their perception. Responding to "I'm not seeing results" with "but you have 720 visitors" argues with their experience and deepens the trust gap.
+
+Instead, frame data as new information the client may not have seen: "I want to share something I'm not sure you've seen yet — [data point]. Let's look at it together." This invites them in rather than challenging them.
+
+The gap between what the data shows and what the client perceives IS the retention case — close that gap by showing them the data, not debating their experience.
+
+**OPENING POSTURE vs FACTS TO DEPLOY — keep these distinct:**
+topRetentionHook should reflect the opening posture: the human, situational acknowledgment that sets the tone for the first 60 seconds. This is NOT a data point — it's reading the room. Example: "You reached out, which means something still feels unresolved — I want to make sure you have the full picture before any decision is made."
+
+opportunityActions are the facts to deploy when the moment is right after acknowledgment — specific data points introduced as new information, not opening salvos.
 
 **SEARCH KEYWORDS — MAKE IMPRESSIONS LOCAL AND SPECIFIC:**
 If gbp.searchKeywords is present, translate the impression count using the actual search terms: "In the last [period], people searching '[top keyword]' and '[second keyword]' found your business on Google — that's real local demand for exactly what you do." This grounds the impression count in actual customer behavior instead of an abstract number. Use the top 1-2 keywords by impression count. Never invent keywords; only use what is in searchKeywords.
@@ -627,6 +670,7 @@ Pick the single most compelling statistic and build the hook around it.
 The JSON object you return must include these additional fields at the root level:
 - "pitchFrame": one of "billing_first" | "competitive_defense" | "service_gap_own_and_fix" | "value_proof" | "urgency_window" | "relationship_save" — MUST match _precomputed.pitchFrame unless you have strong evidence to deviate
 - "contactStoryInterpretation": one of "client_avoidance" | "tsi_gap" | "healthy" | "unknown" — MUST match _precomputed.contactStory.interpretation
+- "saveabilityScore": one of "High Save Probability" | "Recoverable" | "Likely Lost" — MUST match _precomputed.saveabilityScore
 - "competitors": array of named brand competitors (empty array if none named)
 - "urgencyFlag": true if cancel date is within 7 days, false otherwise
 - "cancellationType": brief label for the primary cancel driver (e.g. "billing_decline", "competitor_switch", "no_roi", "service_issue")

@@ -167,6 +167,26 @@ Before writing anything, reason through these lenses:
 
 ---
 
+## Improvement Menu — Section 1 Default Action Set
+
+When building Section 1 (Opportunity), default first move is ADDITIVE — what TSI can do MORE of or BETTER, regardless of stated cancel reason. Pick 2-3 most relevant to this client's stack, vertical, and situation.
+
+**Content & SEO:** new service pages, geo/area targeting pages, FAQ pages, structured data markup (LocalBusiness/Service/FAQ schema), strategic buying-intent blog content, seasonal campaign pushes.
+
+**Google Business Profile:** post cadence activation, Q&A population, photo/video refresh, review response activation, category and attribute completeness audit, services section update.
+
+**Listings & Local:** NAP consistency audit, service area expansion (adjacent cities/zones), duplicate listing suppression.
+
+**BMP / Lead Conversion:** lead capture widget setup or review, automated follow-up sequences for new inquiries, online scheduling activation, email blast to dormant lead list, payment portal setup.
+
+**Reputation:** post-service automated review request sequence, active response program for negative reviews.
+
+**Tracking & Attribution (often the fastest win — solves "no ROI" without changing operations):** call tracking setup, form analytics and lead source tagging, goal tracking verification. Many clients "don't see results" because they're not MEASURING results that ARE there. This surfaces ROI that exists but wasn't being captured.
+
+**Sales Enablement:** 30-minute inbound call coaching for the client's team, lead response time coaching (>5 min response time drops close rate by 80%).
+
+---
+
 ## The Three-Section Conversation Framework
 
 Retention agents should follow this sequence. The brief is structured to support each section in order.

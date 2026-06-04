@@ -219,6 +219,23 @@ async function handleRetention(request: NextRequest) {
   }
 
   lap('formatter done');
+  // ── Formatter failure fallback: post a minimal note so agents aren't left with nothing ──
+  if (!retentionBrief && freshdeskWriteEnabled && freshdeskTicketId) {
+    const errorSummary = Object.entries(agentErrors).map(([k,v]) => `${k}: ${v}`).join('; ');
+    const fallbackNote = `<b>⚠️ RETENTION BRIEF GENERATION FAILED</b><br>The AI pipeline could not generate a brief for this ticket. Manual brief required.<br><i>Errors: ${errorSummary}</i>`;
+    try {
+      const { getFreshdeskCredentials } = await import('@/lib/secrets');
+      const creds = await getFreshdeskCredentials();
+      const auth = Buffer.from(`${creds.apiKey}:X`).toString('base64');
+      await fetch(`https://${creds.domain}/api/v2/tickets/${freshdeskTicketId}/notes`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: fallbackNote, private: true }),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch { /* fallback note failure is non-fatal */ }
+  }
+
   // ── Agent 5: Freshdesk Note Writer ────────────────────────────────────────
   // GATED: only fires when FRESHDESK_WRITE_ENABLED=true is set in Vercel env vars.
   // Do NOT enable until production go-live is confirmed.
@@ -242,7 +259,8 @@ async function handleRetention(request: NextRequest) {
           rawData.client.name,
           agentNotes,
           rawData.client.subscription?.serviceKeys ?? [],
-          rawData.client.price ?? null
+          rawData.client.price ?? null,
+          enrichedAgentNotes  // includes ticket conversation history for Before You Dial
         );
       }
     } catch (err) {

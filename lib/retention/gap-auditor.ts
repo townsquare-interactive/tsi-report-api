@@ -709,7 +709,7 @@ export async function runGapAuditor(data: FetchedData, periodDays = 90): Promise
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
-    signal: AbortSignal.timeout(120_000), // 2-min hard cap
+    signal: AbortSignal.timeout(200_000), // 3.3-min hard cap — matched analyst ceiling
     headers: {
       'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
