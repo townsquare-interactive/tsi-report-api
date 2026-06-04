@@ -41,6 +41,7 @@ import { runGapAuditor } from '@/lib/retention/gap-auditor';
 import { writeRetentionNote } from '@/lib/retention/note-writer';
 import { writeRetentionEvent, getRecentRetentionEvent, noteAlreadyPostedForTicket, type RetentionEventDoc } from '@/lib/retention/store';
 import { getTicketConversations } from '@/lib/platforms/freshdesk';
+import { getFreshdeskCredentials } from '@/lib/secrets';
 
 const DEFAULT_DAYS = 90;
 
@@ -224,7 +225,6 @@ async function handleRetention(request: NextRequest) {
     const errorSummary = Object.entries(agentErrors).map(([k,v]) => `${k}: ${v}`).join('; ');
     const fallbackNote = `<b>⚠️ RETENTION BRIEF GENERATION FAILED</b><br>The AI pipeline could not generate a brief for this ticket. Manual brief required.<br><i>Errors: ${errorSummary}</i>`;
     try {
-      const { getFreshdeskCredentials } = await import('@/lib/secrets');
       const creds = await getFreshdeskCredentials();
       const auth = Buffer.from(`${creds.apiKey}:X`).toString('base64');
       await fetch(`https://${creds.domain}/api/v2/tickets/${freshdeskTicketId}/notes`, {
