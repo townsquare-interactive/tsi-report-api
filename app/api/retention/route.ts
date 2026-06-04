@@ -220,6 +220,7 @@ async function handleRetention(request: NextRequest) {
   }
 
   lap('formatter done');
+  const freshdeskWriteEnabled = process.env.FRESHDESK_WRITE_ENABLED === 'true';
   // ── Formatter failure fallback: post a minimal note so agents aren't left with nothing ──
   if (!retentionBrief && freshdeskWriteEnabled && freshdeskTicketId) {
     const errorSummary = Object.entries(agentErrors).map(([k,v]) => `${k}: ${v}`).join('; ');
@@ -243,7 +244,6 @@ async function handleRetention(request: NextRequest) {
   // Idempotency check: before posting, verify no note has already been written for
   // this ticket ID. Prevents duplicate notes when Vercel retries a timed-out invocation
   // that actually completed on the first attempt.
-  const freshdeskWriteEnabled = process.env.FRESHDESK_WRITE_ENABLED === 'true';
   let freshdeskNote: { noteId: number; noteUrl: string } | null = null;
   if (freshdeskWriteEnabled && retentionBrief && freshdeskTicketId) {
     try {
