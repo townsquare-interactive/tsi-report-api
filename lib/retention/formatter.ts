@@ -177,6 +177,13 @@ YES: "I've made the full case for the value you'd be leaving behind. If after al
 
 The agent is reluctant. They've already tried everything. Financial options should feel like the bottom of a drawer they're opening slowly, not a card they're happy to play.
 
+PRICE-AWARE SECTION 3:
+If monthlyPrice < 200, the math on discounts is trivial (5% of $150 = $7.50/month savings). In these cases:
+- Skip or dramatically simplify the first two agent-discount tiers — they'll feel insulting
+- Focus on free month credit (actual relief) and service value reframing over micro-discounts
+- For very low MRR clients where price isn't actually the issue, Section 3 may be as simple as: "The honest answer is that this investment is already at a floor price. The solution isn't a cheaper version of what you have — it's making what you have perform."
+- Only offer downgrade/credit if there are legitimate products to restructure.
+
 ESCALATION SEQUENCE (strict order — agent works through these one at a time, never jumping ahead):
 
 Step 1 — AGENT-APPROVED DISCOUNT (no manager needed)
@@ -231,7 +238,6 @@ emailVersion: Do NOT lead with financial options in the email. Open with the val
 
 function buildFormatterPrompt(
   analyst: AnalystOutput,
-  gapAudit: GapAuditResult | null,
   clientName: string,
   contractNote: string | null,
   eligibility: ReturnType<typeof computeFinancialEligibility>,
@@ -239,9 +245,7 @@ function buildFormatterPrompt(
 ): string {
   const pitchFrame = analyst.pitchFrame ?? 'value_proof';
   const contactStory = analyst.contactStoryInterpretation ?? 'unknown';
-  const tsiServiceNote = gapAudit?.tsiServiceGap
-    ? `TSI SERVICE ALERT: ${gapAudit.dimensions.service?.narrative ?? 'TSI service gaps exist — review before calling.'}`
-    : null;
+  const tsiServiceNote = null; // gap data stays in MongoDB only — not injected into the brief
 
   const section3Guidelines = buildSection3Guidelines(analyst.monthlyPrice, eligibility);
 
@@ -338,12 +342,12 @@ Every section must feel bespoke. If you find yourself writing a generic sentence
 Client: ${clientName}
 Tenure: ${analyst.tenureMonths} months
 Pipeline at risk: $${pipelineAtRiskOverride.toLocaleString()}
-TSI Service Note: ${tsiServiceNote ?? 'None — service quality is healthy'}
+// Service note omitted — gap data is internal only
 
 Analyst findings:
 ${JSON.stringify(analyst, null, 2)}
 
-${gapAudit ? `Gap Audit Summary:\n${JSON.stringify({ overallScore: gapAudit.overallScore, topGap: gapAudit.topGap, tsiServiceGap: gapAudit.tsiServiceGap, accountHealth: gapAudit.accountHealth }, null, 2)}` : ''}
+// Gap audit data stored in MongoDB for learning — not injected into the brief
 
 ---
 
@@ -440,9 +444,10 @@ COMPETITORS FIELD — extract any named competitors from the analyst findings, c
 
 Rules:
 - Agent scripts should sound like a real human on the phone, not a marketing deck. Contractions are fine. Specificity is required.
-- lossTimeline: 3-6 items, ordered by timing (Day 1 first). Use actual numbers where the analyst provided them.
-- section1 commitments: 2-4 items, grounded in the analyst's opportunityActions. Make them concrete promises, not vague gestures.
+- lossTimeline: Include only the assets that genuinely matter for THIS client — don't pad to hit a number. Day 1 items first. If there are only 2 real loss items for this account, write 2. If there are 5, write 5.
+- section1 commitments: Only include commitments where there is something real and specific to commit to for this client. 1-3 specific promises beats 4 vague ones. Quality over quota.
 - emailVersion in both sections should be ready to copy-paste — professional but warm, specific numbers, no filler.
+- ADAPTIVE DEPTH: Every section should feel like it was written specifically for this client, not filled to meet a template. A client with thin data gets a shorter, more honest brief than a client with rich data. Never pad.
 
 **ANTI-GENERIC QUALITY GATE — apply before finalizing:**
 For every sentence in agentScript (S1 and S2) and verticalNote, apply this test: "Could I copy this sentence onto a different client's brief with no changes?" If yes — if it contains no business name, no specific number, no specific TSI commitment — rewrite it until it fails that test.
@@ -478,7 +483,7 @@ export async function runFormatter(
     ? analyst.pipelineAtRisk
     : (annualValue > 0 ? annualValue : 0);
 
-  const prompt = buildFormatterPrompt(analyst, gapAudit, clientName, contractNote, eligibility, pipelineAtRiskOverride);
+  const prompt = buildFormatterPrompt(analyst, clientName, contractNote, eligibility, pipelineAtRiskOverride);
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',

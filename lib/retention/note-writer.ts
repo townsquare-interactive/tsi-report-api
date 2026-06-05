@@ -107,9 +107,7 @@ function buildNotePrompt(
   enrichedAgentNotes: string = '',
   saveabilityScore: string = 'Recoverable',
 ): string {
-  const tsiServiceGapNote = gapAudit?.tsiServiceGap
-    ? `⚠️ TSI SERVICE GAP — ${gapAudit.topGap}`
-    : '';
+  const tsiServiceGapNote = ''; // gap data stays in MongoDB — removed from note content
 
   const isUnderContract = brief.agentBrief?.contractNote?.includes('UNDER CONTRACT') ?? false;
 
@@ -143,7 +141,7 @@ Saveability: ${saveabilityScore}
 Agent notes at ticket creation: ${agentNotes || 'None'}
 ${enrichedAgentNotes ? `Full ticket context (conversations + notes — use for Before You Dial opening posture):
 ${enrichedAgentNotes}` : ''}
-${tsiServiceGapNote ? `INTERNAL CONTEXT (for Before You Dial bullets only — NEVER put in scripts): ${tsiServiceGapNote}` : ''}
+// Gap data not passed to note writer — stored in MongoDB separately
 
 Brief data (pull the actual content from here — do not paraphrase):
 ${JSON.stringify({
@@ -169,7 +167,7 @@ ${brief.agentBrief?.contractNote ? `<b>${brief.agentBrief.contractNote}</b><br>`
 <li><b>Opening posture:</b> [openingPosture — human acknowledgment, max 15 words, NOT data]</li>
 <li><b>Facts to deploy when relevant:</b> [factsToDeployLater — data point to introduce as new info, max 15 words]</li>
 <li><b>Context:</b> [1-bullet verticalNote — max 15 words]</li>
-${brief.agentBrief?.tsiServiceNote || gapAudit?.tsiServiceGap ? `<li><b>⚠️ TSI:</b> [brief.agentBrief.tsiServiceNote or gapAudit topGap — 1 line max, internal context only, never in scripts]</li>` : ''}
+// TSI service gap bullet removed — gap data stays in MongoDB
 [If anything is genuinely notable from the data — strong GBP metrics, high review count, significant lead volume, or a major gap — add 1-2 <li><b>Notable:</b> [finding — max 20 words]</li> bullets here. Skip entirely if nothing stands out.]
 </ul><hr>
 <b>Section 1 — Opportunity</b><br>
@@ -213,24 +211,8 @@ export async function writeRetentionNote(
   const productsLine = renderProducts(serviceKeys);
   const atRisk = computeAtRiskHeader(brief.pipelineAtRisk, monthlyPrice);
 
-  // Pre-compute top gaps for the footer (TypeScript, not model)
-  // Filter out any gap summaries that contain mea culpa language about provisioning —
-  // these come from fetch failures misread as setup failures by the gap auditor model.
-  // The agent should never see "never activated" or "broken connection" in the gap footer.
-  const MEA_CULPA_GAP_PATTERNS = [
-    /never activated/i,
-    /never been activated/i,
-    /broken connection/i,
-    /never set up/i,
-    /never provisioned/i,
-    /not provisioned/i,
-    /has a broken/i,
-    /appears to have never/i,
-    /never configured/i,
-  ];
-  const topGaps = (gapAudit?.prioritizedGaps?.slice(0, 2) ?? [])
-    .filter(g => !MEA_CULPA_GAP_PATTERNS.some(p => p.test(g.summary)))
-    .map(g => `${g.dimension.toUpperCase()}: ${g.summary}${g.tsiOwned ? ' [TSI-owned]' : ''}`);
+  // Gap data stays in MongoDB for learning — not surfaced in the agent note
+  const topGaps: string[] = [];
 
   // Step 1: Haiku generates the narrative sections (agentBrief, S1, S2)
   const apiKey = getAnthropicApiKey();

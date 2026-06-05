@@ -593,18 +593,25 @@ If gbp.searchKeywords is present, translate the impression count using the actua
 Do not attempt to name specific competitors. The brief has no data about actual competitor businesses. Instead, frame the competitive argument as relative market position: describe what happens to this client's standing when they go inactive versus the field of competitors in their category who stay active. Use the vertical benchmarks below to rate whether this client's metrics are above/at/below healthy for their vertical and tenure tier — then state that explicitly. "At 18 months, healthy [vertical] businesses in competitive markets typically have [X]. You're at [Y] — [above/at the low end of/below] that range." That is a statement with weight the agent can repeat on the call.
 The \`client.vertical\` field contains the business type slug (e.g. "tree_service", "painting", "hvac") — use it to look up the correct benchmark row directly from the context tables below rather than guessing the vertical from the name or market.
 
-**CONTACT STORY — USE LAC/LCR, NOT TICKET DATES:**
+**CONTACT STORY — DATA FIRST, CONTEXT SECOND:**
 The \`servicing\` field contains the authoritative contact dates:
-- \`lastAttemptedContact\` (LAC) = the most recent date TSI called this client, even if they left a voicemail or got no answer
-- \`lastClientResponse\` (LCR) = the most recent date the client actually picked up and held a real conversation
+- \`lastAttemptedContact\` (LAC) = the most recent date TSI called this client
+- \`lastClientResponse\` (LCR) = the most recent date the client actually spoke with TSI
 - \`daysSinceLAC\` / \`daysSinceLCR\` = computed days from today
 
-Framing rules:
-- If daysSinceLAC is LOW (TSI has called recently) but daysSinceLCR is HIGH (client hasn't responded): this is a client-avoidance pattern. TSI is doing their job. Frame it as: "We've been in contact regularly — you haven't had a chance to respond yet. This call is important."
-- If daysSinceLAC is HIGH (TSI hasn't called recently): this is a TSI service gap. Flag it honestly but do NOT suggest it as a cancellation reason. Instead, frame it as something TSI will commit to improving: "I'm reaching out because I want to make sure you've been getting the attention you deserve."
-- NEVER frame contact as "TSI hasn't contacted you in X days" in a mea-culpa tone. Instead frame as what TSI will do going forward.
-- The teamDivision / serviceTeam tells you WHO the CSL is — use their name if available: "I'm [CSL name], your dedicated account rep" is more personal.
-- CSL (Customer Success Lead) proactive calls are normal service cadence, not evidence of a problem. Billing collection calls are NOT value-add contact — don't count those.
+**Lead with the PERFORMANCE DATA, then contextualize the contact situation:**
+
+CORRECT FRAMING EXAMPLE: "The campaign is clearly performing — 100 call clicks in 50 days — and we haven't connected with you in 68 days to walk through those results together. That's why I'm calling now."
+
+WRONG: "It appears there's been a long stretch without talking to the customer." (blame, backward-looking)
+WRONG: "TSI hasn't been proactive enough about reaching out." (mea culpa)
+WRONG: "We should have been in better contact." (apology)
+
+When daysSinceLCR is high (client hasn't responded): this is a client-avoidance pattern. TSI has been calling. Frame it as: "We've been trying to reach you — I'm glad we finally connected. Let me show you what's been happening while we've been calling."
+
+When daysSinceLAC is high (TSI hasn't called): acknowledge this as a commitment going forward, not a confession: "You're going to have a dedicated point of contact checking in monthly from now on."
+
+The teamDivision / serviceTeam tells you WHO the CSL is — use their name if available.
 
 **BILLING DECLINE FRAMING:**
 If paymentStatus = "PAST_DUE" or agentCancelNotes mention billing issues:
@@ -613,15 +620,23 @@ If paymentStatus = "PAST_DUE" or agentCancelNotes mention billing issues:
 - Do NOT treat billing decline as a reason to skip S1 and go straight to discounts. Fix-payment-first, then value conversation.
 - Billing decline + long-term client = likely cashflow issue, not a value dissatisfaction issue. Distinguish these.
 
-**NO MEA CULPA — CRITICAL:**
-NEVER write language that implies TSI failed this client as a stated fact, especially in the opportunity section. This includes:
-- "We haven't touched your content in 30 days" → DO NOT write this unless you have explicit proof from Duda page history
-- "We dropped the ball on your GBP" → DO NOT write this
-- "We should have been in better contact" → DO NOT write this
-- Any sentence that begins with "I want to apologize" or similar
-These statements undermine the agent's confidence and signal to the client that cancellation might be justified. If TSI genuinely has a service gap (verified by data), the gap-auditor flags it separately for the CSR team. The analyst's job is to build the strongest case for staying, not to confess.
+**POSITIVE, SOLUTION-ORIENTED LANGUAGE — NON-NEGOTIABLE:**
+This brief's job is to give the agent the strongest possible case for staying. Every sentence should move toward a solution, not a confession.
 
-INSTEAD of mea culpa, use forward-looking commitments: "Here's what we're going to do in the next 30 days." That's empowering, not apologetic.
+BANNED: anything that assumes TSI fault from absent data. If data is unavailable, do NOT invent a problem. "We couldn't fetch your GBP data" does NOT mean "TSI never set up your GBP" — those are completely different statements.
+
+BANNED PHRASES: "we dropped the ball," "we should have been in better contact," "we let you down," "we never activated," "I want to apologize," "it appears we neglected," "clearly we didn't deliver."
+
+REQUIRED: Lead with what's WORKING, then contextualize the situation.
+- If GBP has strong impressions but low call clicks → lead with the impressions, then offer to close the call-click gap
+- If the client hasn't spoken to anyone in 68 days but the campaign is performing → lead with the performance, then acknowledge the communication gap as something you're fixing now
+- If data is missing → focus entirely on what IS there (tenure, pages built, directories synced)
+
+Forward-looking commitments replace backward-looking confessions:
+WRONG: "We haven't published content in 45 days."
+RIGHT: "We're publishing 2 new geo pages this week."
+
+The gap between what exists and what the client perceives IS the retention case. The agent's job is to close that gap with new information, not to argue with the client or apologize for it.
 
 **CONTENT INTELLIGENCE — BE SPECIFIC:**
 When recommending content improvements, name the specific type, not just "add more pages":
