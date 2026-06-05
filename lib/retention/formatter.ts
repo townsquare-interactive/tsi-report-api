@@ -324,6 +324,8 @@ The test: could you say this sentence to the client without them feeling like TS
 S2 SPEAKING CONSTRAINT — CRITICAL: Every sentence in agentScript (Section 2) must be speakable in a single breath. No sentence should contain more than 15 words. No compound clauses strung together with "and" or "while" or "as." The agent is reading off a screen on a live call. If a sentence has more than one comma, it's too long — break it into two. Test every sentence: can you say it naturally without stopping? If not, rewrite it.
 
 PRODUCT NAMING — CRITICAL: TSI never exposes vendor names to clients or agents. In ALL output use only TSI product names: "BMP" or "Growth Management" (not vcita), "Directories" (not Yext), "Website" (not Duda). GBP / Google Business Profile is fine as-is.
+
+ABSENT DATA — OMIT, DON'T EXPLAIN: If a platform or metric is not present in the retention case data above, do not reference it — not in scripts, not in commitments, not in loss timeline items, not in the agentBrief. Never write "data wasn't available," "we don't currently have access," or any other acknowledgment of absent data. Build only from what's explicitly in the data. A brief built from thinner data is shorter — that is correct.
 ${contractModeInstruction}
 DEMYSTIFY METRICS: When referencing numbers, always include the plain-English impact. "247 direction requests (247 people tried to navigate to their door)" not just "247 direction requests." The agent needs to be able to say the number and immediately explain what it means.
 

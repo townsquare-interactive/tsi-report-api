@@ -279,9 +279,9 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
       },
       launchDate: client.subscription?.launchDate,
     },
-    // dataErrors tells you WHY a platform field is null — data fetch failed vs. product not subscribed.
-    // IMPORTANT: null data with no corresponding error means the platform returned successfully but empty.
-    // null data WITH an error means the fetch itself failed. Neither means the product is absent.
+    // dataErrors is FOR DEBUGGING ONLY — do NOT reference these in analysis, output fields, or agent scripts.
+    // A platform error or null data tells you nothing about whether the product is set up or working.
+    // If a platform has an error, treat it the same as null: omit that platform from your analysis.
     dataErrors: Object.keys(data.errors ?? {}).length > 0 ? data.errors : null,
     gbp: gbp
       ? {
@@ -503,7 +503,7 @@ Reason through the following questions silently before writing the JSON — your
 - \`subscribedProducts\` is the ONLY source of truth for what this client has. Trust it absolutely.
 - Null OR zero data for a subscribed product = the API fetch failed or the account wasn't found. It NEVER means the product isn't set up, provisioned, or configured.
 - NEVER say "no active products", "no website", "no listings", or any absence claim based on null or zero data alone.
-- When subscribed but data is null OR zero: pivot to what IS available — never lead with what's missing.
+- When subscribed but data is null: omit that platform from your analysis. Do not pivot, explain, or reference the absence. Build from whatever IS present.
 
 **ZERO DATA IS NOT THE SAME AS NULL DATA — but both could be fetch failures:**
 - Yext returning 0 synced listings with locationId=null does NOT mean listings weren't set up — it means Yext couldn't find the entity for this GPID this session. The listings ARE active.
@@ -519,14 +519,22 @@ When Duda shows status UNPUBLISHED, check _precomputed.websitePublishInterpretat
 **BANNED PHRASES for subscribed products with missing data:**
 NEVER write: "never activated", "never set up", "not provisioned", "has a broken connection", "appears inactive", "never configured", "not connected" — for any product that is subscribed. Use: "data not available for this period" and move on.
 
-**RESOURCEFULNESS — BUILD THE CASE FROM WHAT YOU HAVE:**
-When platform data is unavailable, do not make absence the story. A good retention analyst makes a compelling case from whatever data exists. Use these pivot rules:
+**ABSENT DATA — BUILD FROM WHAT'S THERE. SILENCE ON WHAT'S NOT:**
+When any platform's data field is null — GBP, website, listings, pipeline, social, or any other — omit that platform from your analysis entirely.
 
-- **GBP null:** Lead with tenure months (every month = accumulated Google authority), total reviews if available, directory listing count, website visitors. Frame: "X months of Google authority built" even without current impression numbers.
-- **Website UNPUBLISHED (check _precomputed.websitePublishInterpretation first):** If interpretation shows RECENTLY_ACTIVE, the site was live until recently — do NOT call it a setup failure. Say "the site is currently paused" and pivot to the equity built during active months. Only flag as a structural issue if interpretation shows POSSIBLY_NOT_PUBLISHED.
-- **Yext null/timeout:** Use GBP visibility and website traffic as evidence of digital presence. Directory value argument: "synced listings across Google, Yelp, Apple Maps, Bing" from Falcon subscription data.
-- **All platform data null:** Lead with tenure (months × monthly price = total investment), what rebuilding costs elsewhere (new website $3K-$8K, SEO 6–12 months to ramp, directories $100-$200/month separately), and the specific cancel date as urgency.
-- **vcita null:** Skip pipeline section entirely. Focus on GBP leads and website traffic. Never make up lead counts.
+DO NOT:
+- Explain why the data is missing ("GBP isn't connected", "access hasn't been granted", "data unavailable this period")
+- Reference the absence as a reason the client might be canceling or as a service gap
+- Use absence to infer a problem ("social appears inactive", "GBP appears unmanaged")
+- Pivot to what you'd say about that platform despite the missing data ("Since we don't have GBP data, once they grant access...")
+- Mention the platform name at all in opportunityActions, topRetentionHook, or verticalContext if its data is null
+
+DO:
+- Build the retention case exclusively from platforms where you have actual data
+- Still include subscribed services in lossAssets as Day 1 loss items — "Social posting stops Day 1" is valid even with null SOCI data because it's a subscription fact, not a data claim
+- Accept that a brief built from thin data will simply be thinner — that is correct behavior
+
+The test: if you removed the platform's data field from the snapshot and re-ran, would you write a different sentence? If yes, that sentence is data-dependent and should not appear when data is null.
 
 **FACTUAL CONSTRAINTS — NEVER DO THESE:**
 1. NEVER say a product was "never activated," "never set up," or "never used" from low usage data. Low engagement = client hasn't engaged fully. "Underutilized" is correct. "Never activated" is not.
@@ -541,12 +549,12 @@ Never omit social from the brief when S is in the service keys.
 
 When social has real data: use upcomingPostCount and scheduledNetworks as proof of active management, pageFans28day as audience built, pageImpressions28day as reach, topPosts for specific content that stops Day 1.
 
-When social is null (S key subscribed but data unavailable): still include "Active social posting management across connected networks" as a Day 1 loss asset. Do NOT say social was never configured.
+When social data is null (S key subscribed but SOCI data unavailable): do NOT write social performance claims, engagement metrics, or post counts. You MAY include "Social posting stops on Day 1" as a lossAsset — that is a subscription fact, not a data claim. Nothing else about social.
 
-**GBP ZERO vs. UNAVAILABLE — CRITICAL DISTINCTION:**
-- GBP data = null → TSI does not currently have management access to this client's Google Business Profile. This is a standard operational gap — the client needs to grant TSI's agency account manager access to their listing. It is NOT a TSI technical failure. The correct framing: "We don't currently have access to your Google Business Profile data — once you grant us manager access, we can start actively managing your listing and this becomes one of our strongest tools." NEVER say "GBP connection failed" or "GBP never set up" as if TSI dropped the ball — the client has not completed the access step yet.
-- GBP data = present but zeros (impressions=0, callClicks=0) → real performance data. The profile is active but generating no traffic. This IS a content/optimization gap TSI can address. Say so specifically.
-- Never conflate these two — one is a pending client action, one is a performance opportunity.
+**GBP DATA — PRESENT VS. ABSENT:**
+- GBP data = null → omit GBP entirely from your analysis. Do not explain why. Do not mention access, connections, or management status. Simply don't reference GBP performance at all.
+- GBP data = present but zeros (impressions=0, callClicks=0) → real data. The profile is active but generating no traffic. This IS a content/optimization gap TSI can address — say so specifically.
+- GBP data = present with positive numbers → use it. Lead with it. It's often the strongest retention argument.
 
 **DEMYSTIFY EVERY METRIC — REQUIRED:**
 Never state a raw number without its plain-English business impact. A retention agent is on a phone call with a small business owner who doesn't know what "impressions" or "actions" mean.

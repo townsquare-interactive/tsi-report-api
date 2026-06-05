@@ -114,7 +114,7 @@ function buildNotePrompt(
   return `You are writing a SCANNABLE internal Freshdesk note for a CSR who will dial this client in the next 60 seconds. Write clean HTML using ONLY: <b>, <br>, <ul>, <li>, <hr>. No paragraphs. No narration. Bullets only.
 
 TWO REGISTERS — CRITICAL:
-The "Before you dial" section (Snapshot, Cancel read, Lead with, Context, TSI, Notable bullets) is INTERNAL — the agent reads it privately. You MAY include honest TSI context here, including service gaps, LCR issues, and data limitations.
+The "Before you dial" section (Snapshot, Cancel read, Lead with, Context, TSI, Notable bullets) is INTERNAL — the agent reads it privately. You MAY include honest TSI context here, including LCR issues and service situation. Do NOT reference absent platform data or data limitations — if a platform has no data, simply don't mention it.
 The Section 1 and Section 2 scripts are SPOKEN TO THE CLIENT. NEVER include TSI failure language, apologies, or "we haven't done X" in scripts. Scripts must be forward-looking, confident, and specific.
 
 PRODUCT NAMING — CRITICAL: Never use vendor names. Always use TSI product names: "BMP" or "Growth Management" (not vcita), "Directories" (not Yext), "Website" (not Duda). GBP / Google Business Profile is fine.
