@@ -221,7 +221,12 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
 
   type SaveabilityScore = 'High Save Probability' | 'Recoverable' | 'Likely Lost';
   let saveabilityScore: SaveabilityScore;
-  if (isClosingBusiness) {
+  // If Falcon already shows Cancelled Client status, this is a closed account — not a live save opportunity
+  const alreadyCancelledInFalcon = client.status?.toLowerCase().includes('cancelled client') ||
+    client.status?.toLowerCase() === 'cancelled';
+  if (alreadyCancelledInFalcon) {
+    saveabilityScore = 'Likely Lost';
+  } else if (isClosingBusiness) {
     saveabilityScore = 'Likely Lost';
   } else if (isDecisionFinalized && hasNamedCompetitor && priorCancelCount >= 1) {
     saveabilityScore = 'Likely Lost';
@@ -444,6 +449,7 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     _precomputed: {
       pitchFrame,
       saveabilityScore,
+      alreadyCancelledInFalcon,  // client.status is "Cancelled Client" — closed account, not pending
       contactStory: {
         interpretation: contactStoryInterpretation,
         explanation: contactStoryExplanation,
@@ -671,6 +677,13 @@ The JSON object you return must include these additional fields at the root leve
 - "pitchFrame": one of "billing_first" | "competitive_defense" | "service_gap_own_and_fix" | "value_proof" | "urgency_window" | "relationship_save" — MUST match _precomputed.pitchFrame unless you have strong evidence to deviate
 - "contactStoryInterpretation": one of "client_avoidance" | "tsi_gap" | "healthy" | "unknown" — MUST match _precomputed.contactStory.interpretation
 - "saveabilityScore": one of "High Save Probability" | "Recoverable" | "Likely Lost" — MUST match _precomputed.saveabilityScore
+
+CRITICAL — ALREADY CANCELLED CLIENTS:
+If _precomputed.alreadyCancelledInFalcon is true, the client is already cancelled in Falcon (status = "Cancelled Client"). This is NOT a pending cancellation — this is a closed account. Do NOT build a standard retention pitch. Instead:
+- pitchFrame should still be used for tone, but acknowledge this is a reconnect/rescue situation
+- cancelReasonAnchor should reflect that the account is already closed
+- opportunityActions should focus on a win-back approach if appropriate, or acknowledge this may be too late
+- The saveabilityScore will be Likely Lost — honor that in how you write the brief
 - "competitors": array of named brand competitors (empty array if none named)
 - "urgencyFlag": true if cancel date is within 7 days, false otherwise
 - "cancellationType": brief label for the primary cancel driver (e.g. "billing_decline", "competitor_switch", "no_roi", "service_issue")
