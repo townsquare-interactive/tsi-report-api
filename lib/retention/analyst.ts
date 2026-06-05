@@ -511,6 +511,11 @@ Reason through the following questions silently before writing the JSON — your
 - vcita returning null or zero leads does NOT mean BMP was never configured — it means the API call failed.
 - GBP null means the client hasn't granted TSI agency account manager access (see GBP section below).
 
+**DUDA UNPUBLISHED — CRITICAL DISTINCTION:**
+When Duda shows status UNPUBLISHED, check _precomputed.websitePublishInterpretation FIRST.
+- If it says HAS_TRAFFIC or RECENTLY_ACTIVE or POST_CANCEL_UNPUBLISHED: the website WAS live. Do NOT say "website was never published," "never went live," "unpublished since day one," or "never active." Website traffic cannot exist from a site that was never live. The UNPUBLISHED status is post-cancellation, not the operating history.
+- Only if websitePublishInterpretation says POSSIBLY_NOT_PUBLISHED with zero traffic AND very short tenure should you consider a setup issue.
+
 **BANNED PHRASES for subscribed products with missing data:**
 NEVER write: "never activated", "never set up", "not provisioned", "has a broken connection", "appears inactive", "never configured", "not connected" — for any product that is subscribed. Use: "data not available for this period" and move on.
 
