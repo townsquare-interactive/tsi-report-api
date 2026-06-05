@@ -49,6 +49,8 @@ export interface AnalystOutput {
   contactStoryInterpretation: 'client_avoidance' | 'tsi_gap' | 'healthy' | 'unknown';
   // Pre-computed saveability triage — helps agents allocate effort; computed from deterministic signals
   saveabilityScore: 'High Save Probability' | 'Recoverable' | 'Likely Lost';
+  // True when Falcon status is already "Cancelled Client" — closed account, different framing needed
+  alreadyCancelledInFalcon: boolean;
   competitors: string[];
   urgencyFlag: boolean;
   cancellationType: string;
