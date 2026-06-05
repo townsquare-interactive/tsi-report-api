@@ -119,19 +119,18 @@ The Section 1 and Section 2 scripts are SPOKEN TO THE CLIENT. NEVER include TSI 
 
 PRODUCT NAMING — CRITICAL: Never use vendor names. Always use TSI product names: "BMP" or "Growth Management" (not vcita), "Directories" (not Yext), "Website" (not Duda). GBP / Google Business Profile is fine.
 
-BREVITY RULES:
-- clientSnapshot: 1 bullet, max 20 words. Tenure + vertical + what's at stake.
-- cancelReasonRead: 1 bullet, max 15 words. The real reason, plainly stated.
-- openingPosture: 1 bullet, max 20 words. Human acknowledgment of their situation — sets the tone for the FIRST 60 seconds BEFORE presenting any data. Not a data point. Example: "They're frustrated and haven't been followed up with — open by acknowledging that."
-- factsToDeployLater: 1 bullet, max 20 words. The strongest data point to introduce later as new information, NOT as a counter-argument. Example: "135 Map navigations — frame as: I want to share something you may not have seen."
-- verticalNote: 1 bullet, max 20 words. The one context point the agent needs about this type of business.
-- Notable highlights: 1-2 bullets max, 20 words each. Only include if genuinely notable — a strong GBP metric, high review count, significant lead count, or major platform gap. Skip if nothing stands out.
-- Section 1 agentScript: 2-3 sentences max. Opening with a specific number → what TSI will do → yes/no closing question.
-- Each commitment: "<b>title</b> → plain-English expected impact" — max 15 words per item.
-- Section 2 script: 2 sentences. Sentence 1: key loss with a real number. Sentence 2: "Is it okay if all of that happens?"
-- Each loss item: "<b>asset name with key number</b> · timing · one-phrase consequence" — Example: <li><b>27 Directories listings</b> · inaccurate within 30 days · customers find wrong hours or number</li>
-- emailVersion: DO NOT include in the note — it is in the JSON for reference only
-- TOTAL NOTE (S1+S2+brief): target under 250 words of visible text
+BREVITY AND FRAMING RULES:
+- clientSnapshot: 1 bullet, max 20 words. Who they are + one specific positive number. E.g. "8-month Florida roofer, 720 monthly site visitors, canceling June 24."
+- cancelReasonRead: 1 bullet, max 20 words. The STRATEGIC CONTEXT for this call — what the agent needs to prepare, framed as a situation to navigate. NOT a blame statement. E.g. "Third cancel, hasn't seen results — share GBP data as new info they haven't seen." NOT "client frustrated because TSI failed X."
+- openingPosture: 1 bullet, max 20 words. What human acknowledgment opens this call. Situational, not a data point. E.g. "They haven't connected with anyone in 68 days — acknowledge that warmly before anything else."
+- factsToDeployLater: 1 bullet, max 20 words. The single best data point to introduce as news, not a counter-argument. E.g. "135 Google Maps navigations in 90 days — share as something they probably haven't seen yet."
+- verticalNote: 1 bullet, max 20 words. Where this client CAN GET TO, not where they're falling short. E.g. "Florida roofing in peak storm season — highest-value window of the year."
+- Notable: Skip this bullet entirely unless there is a GENUINELY STRONG positive signal (strong GBP metrics, named leads sitting in CRM, high review count). Do NOT use this bullet to surface problems or gaps.
+- Section 1 agentScript: 2-3 sentences. Lead with positive data → state one concrete action happening this week → yes/no close. ZERO references to what hasn't been done.
+- Each commitment: "<b>specific action starting this week</b> → the RESULT for the client" — 15 words max. Positive action, not a problem admission.
+- Section 2 script: 2 sentences. First: what specifically disappears with a real number. Second: "Is it okay if all of that happens?"
+- Each loss item: "<b>asset with key number</b> · timing · one-phrase business consequence"
+- TOTAL NOTE: as long as it needs to be, no shorter. Quality over word count. If this client has thin data, write a thinner note honestly — don't pad.
 ${isUnderContract ? '\nCONTRACT CLIENT: Put the contract callout FIRST in the Before You Call section. The tone is patient — more time, not panic.' : ''}
 
 Client: ${clientName}

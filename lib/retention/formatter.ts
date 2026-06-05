@@ -344,8 +344,30 @@ Tenure: ${analyst.tenureMonths} months
 Pipeline at risk: $${pipelineAtRiskOverride.toLocaleString()}
 // Service note omitted — gap data is internal only
 
-Analyst findings:
-${JSON.stringify(analyst, null, 2)}
+Retention case data (curated for positive-framing brief generation):
+${JSON.stringify({
+  // What's WORKING — the retention case
+  topRetentionHook: analyst.topRetentionHook,
+  opportunityActions: analyst.opportunityActions,
+  lossAssets: analyst.lossAssets,
+  pipelineAtRisk: analyst.pipelineAtRisk,
+  // Context for accurate framing
+  tenureMonths: analyst.tenureMonths,
+  monthlyPrice: analyst.monthlyPrice,
+  serviceKeys: analyst.serviceKeys,
+  competitors: analyst.competitors,
+  urgencyFlag: analyst.urgencyFlag,
+  cancellationType: analyst.cancellationType,
+  cancelReasonAnchor: analyst.cancelReasonAnchor,
+  verticalContext: analyst.verticalContext,
+  seasonalContext: analyst.seasonalContext,
+  saveabilityScore: analyst.saveabilityScore,
+  pitchFrame: analyst.pitchFrame,
+  alreadyCancelledInFalcon: analyst.alreadyCancelledInFalcon,
+  // NOTE: cancellationRisk, insights (per-product gap analysis), and clientProfile are
+  // intentionally excluded — they are diagnostic learning data for MongoDB, not brief content.
+  // Do NOT infer or mention underperformance from their absence.
+}, null, 2)}
 
 // Gap audit data stored in MongoDB for learning — not injected into the brief
 
@@ -359,23 +381,23 @@ Produce the final retention brief as a JSON object with this EXACT structure:
 
 {
   "agentBrief": {
-    "clientSnapshot": "2-3 sentences: who is this, how long with TSI, what's at stake. Written as a quick brief the agent reads before dialing. Specific numbers.",
+    "clientSnapshot": "1-2 sentences max: who this client is and the single most important fact about this call. Tenure + what they have + what's at stake. Lead with a number. NOT what went wrong.",
     "contractNote": ${JSON.stringify(contractNote)},
-    "cancelReasonRead": "1-2 sentences: what the analyst thinks is really going on — use the cancelReasonAnchor and cancellationRisk from the analysis. Be direct.",
-    "leadWith": "the single strongest opening argument — what the agent says in the first 30 seconds. Should be the most compelling specific data point for this client.",
-    "verticalNote": "1-2 sentences: the competitiveBenchmark statement from the analyst output, expressed as a plain sentence the agent can say. Must include the actual metric, actual threshold, and above/at/below rating. E.g. 'At 18 months, healthy exterior painters typically see 1,500+ impressions — you're at 847, at the low end of normal for your stage.'",
+    "cancelReasonRead": "1 sentence: the strategic CONTEXT for this call — what the agent needs to mentally prepare for. Framed as a situation to navigate, not a blame statement. E.g. 'Fifth cancel attempt — they haven't seen real results yet; have the GBP data ready to share as new information.' NOT 'client frustrated because TSI failed to X.'",
+    "leadWith": "the single strongest POSITIVE data point — something the client probably hasn't seen and will be surprised by. Frame as new information to share, not an argument against their experience. E.g. '135 people navigated to their door via Google Maps last 90 days — that's the hook.'",
+    "verticalNote": "1 sentence: what's ACHIEVABLE for this vertical at this stage — where the client can get to, not where they're falling short. Frame as opportunity, not deficit. E.g. 'Florida roofing at 8 months can reach 2,000+ monthly GBP impressions — that's the target we're building toward.'",
     "tsiServiceNote": ${JSON.stringify(tsiServiceNote)}
   },
   "section1": {
-    "headline": "the opening question — e.g. 'What if we could get you more [leads/calls/traffic] in the next 30 days?'",
+    "headline": "A forward-looking question about ADDING value or unlocking something new — e.g. 'What if we got [specific thing] live for you this week?' Not 'would you stay if we fixed X.'",
     "commitments": [
       {
-        "title": "short label — 3-5 words",
-        "description": "specific thing TSI will do — 1 sentence",
-        "expectedImpact": "plain-English outcome — 1 sentence, include timeframe"
+        "title": "short label — 3-5 words — an ACTION starting now, not a problem we're admitting",
+        "description": "specific thing being DELIVERED this week, stated as a positive action — e.g. 'Publishing a storm-damage service page by Friday' NOT 'fixing the content we haven't been publishing'",
+        "expectedImpact": "the BUSINESS RESULT for the client — what changes for them in 30 days as a result"
       }
     ],
-    "agentScript": "MAXIMUM 2 SENTENCES. What the agent says out loud. Conversational. Must include one specific number. Ends with a yes/no question.",
+    "agentScript": "MAXIMUM 2 SENTENCES. Lead with the strongest data point the client probably hasn't seen. State one concrete thing happening this week. End with yes/no question. ZERO references to what hasn't been done.",
     "emailVersion": "2-3 sentences max. Professional, specific, references key data point."
   },
   "section2": {
@@ -449,15 +471,17 @@ Rules:
 - emailVersion in both sections should be ready to copy-paste — professional but warm, specific numbers, no filler.
 - ADAPTIVE DEPTH: Every section should feel like it was written specifically for this client, not filled to meet a template. A client with thin data gets a shorter, more honest brief than a client with rich data. Never pad.
 
-**ANTI-GENERIC QUALITY GATE — apply before finalizing:**
-For every sentence in agentScript (S1 and S2) and verticalNote, apply this test: "Could I copy this sentence onto a different client's brief with no changes?" If yes — if it contains no business name, no specific number, no specific TSI commitment — rewrite it until it fails that test.
+**QUALITY GATE — apply before finalizing:**
+Every sentence in the note must pass both tests:
+1. SPECIFICITY: "Could I copy this sentence onto a different client's brief with no changes?" If yes — rewrite with this client's actual numbers, name, or market.
+2. POSITIVE FRAME: "Does this sentence make the agent feel confident going into this call?" If no — rewrite. Agents who feel like they're apologizing don't save accounts.
 
-S1 agentScript MUST contain all three:
+S1 agentScript MUST contain:
 (a) the client's business name or their market/city
-(b) a specific number from their data (impressions, leads, call clicks, pipeline $, etc.)
-(c) a specific TSI commitment ("We'll publish 2 new geo pages this week", "I'll have our team review your GBP setup within 48 hours")
+(b) a specific positive data point (impressions, leads, visitors, revenue, reviews — something that's WORKING)
+(c) a specific forward-looking commitment starting this week ("We're publishing X this week", "I'll have Y done in 48 hours")
 
-verticalNote MUST carry the competitiveBenchmark statement with the actual metric value and actual threshold — not generic vertical description.
+The brief should make the agent feel like they have real ammunition — specific numbers, a concrete plan, and a client who hasn't heard the full picture yet.
 
 - Return ONLY the raw JSON object. No markdown. No code fences. No \`\`\`json prefix. The response must start with { and end with }.`;
 }
