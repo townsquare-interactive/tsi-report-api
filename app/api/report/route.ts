@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { clientId, vcitaId, dudaSiteName, gbpLocationId, businessName } = resolved;
+  const { clientId, vcitaId, dudaSiteName, gbpLocationId, gbpOrg, businessName } = resolved;
 
   // Step 2: Falcon — full client metadata + activities
   let client;
@@ -76,8 +76,8 @@ export async function GET(request: NextRequest) {
 
   // Step 4: Fan out to all platforms in parallel
   const [gbpResult, gbpReviewsResult, dudaResult, yextResult, vcitaResult, sociResult] = await Promise.allSettled([
-    gbpLocationId ? getGbpInsights(gbpLocationId, days) : Promise.resolve(null),
-    gbpLocationId ? getGbpReviews(gbpLocationId) : Promise.resolve([]),
+    gbpLocationId ? getGbpInsights(gbpLocationId, days, gbpOrg) : Promise.resolve(null),
+    gbpLocationId ? getGbpReviews(gbpLocationId, gbpOrg) : Promise.resolve([]),
     dudaSiteName ? getDudaData(dudaSiteName, days) : Promise.resolve(null),
     getYextData(gpid, days),
     vcitaId ? getVcitaData(vcitaId, days) : Promise.resolve(null),
