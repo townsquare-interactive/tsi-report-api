@@ -23,28 +23,32 @@ GPID (e.g. "TI ROOFIN047")
   │   → googlePlaceId (preferred GBP key)
   │   → googleAccountId (fallback)
   │
-  ▼ Step 3: GBP Location Resolution (6 fallback levels)
-      a) Agency account + Place ID filter (exact — preferred)
-      b) Agency account + storeCode "{GPID}-001" (spaces preserved, e.g. "TI ROOFIN047-001")
-      c) Agency account + storeCode "{GPID_no_spaces}-001" (e.g. "TIROOFIN047-001" — older clients)
-      d) Agency account + title exact match (fragile — name mismatches cause nulls)
-      e) Agency account + title-contains match (partial name — handles "Eash Co. LLC" vs "Eash Co.")
-      f) Client own Google account + title (last resort — usually inaccessible)
-      → gbpLocationId (null if all 6 fail — client not in agency account)
+  ▼ Step 3: GBP Multi-Org Location Resolution (updated 2026-06-08)
+      Searches 4 TSI org accounts in order: Agency → Middleman → Original → Suspended
+      Within each org, all location groups searched using 5-step cascade:
+        a) metadata.placeId filter (exact — preferred)
+        b) storeCode "{GPID}-001" (spaces preserved, e.g. "TI ROOFIN047-001")
+        c) storeCode "{GPID_no_spaces}-001" (e.g. "TIROOFIN047-001" — older clients)
+        d) title exact match (fragile)
+        e) title-contains match (partial name — handles "Eash Co. LLC" vs "Eash Co.")
+      → { gbpLocationId, gbpOrg } (both null if not found in any org)
 ```
 
-**GBP Agency Account:** `accounts/105329348540167006988` (9,638 TSI locations)
-**GBP OAuth:** `gbp.agency@townsquaredigital.com` — credentials in `tsi/mcp/gbp` (AWS Secrets Manager)
-**StoreCode formats:** Both tried — `{GPID}-001` (spaces) AND `{GPID_no_spaces}-001` (no spaces)
-**Auth fixed:** 2026-05-21 — see Obsidian `Integrations/gbp-auth-brief`
-**StoreCode note (2026-06-01):** TSI has mixed storeCode history. Some clients have numeric CIDs as storeCode (e.g. Eash Co. = `02378400463851801322`) — those are found via title-contains fallback.
+**GBP Orgs (searched in this order):**
+- Agency: `accounts/105329348540167006988` (~9,638 locations) — `refresh_token`
+- Middleman: 3 location groups (~3,444 locations) — `refresh_token_middleman`
+- Original: 4 location groups (~24k locations) — `refresh_token_original`
+- Suspended: 4 location groups (~1,845 locations) — `refresh_token_suspended`
 
-**GBP null = client has not granted TSI agency account manager access.** Not a code error — operational gap requiring client action.
+**Credentials:** All 4 refresh tokens in `tsi/mcp/gbp` AWS secret. See Obsidian `Integrations/gbp`.  
+**StoreCode note:** Some clients have numeric CID storeCodes (e.g. Eash Co. = `02378400463851801322`) — found via title-contains fallback.
+
+**GBP null** = location not found in any of the 4 TSI org accounts. Rare — check `[GBP] No match in org` log lines to confirm which orgs were searched.
 
 ## Data Flow — `/api/report`
 
 ```
-resolveFromGpid(gpid) → clientId, vcitaId, dudaSiteName, gbpLocationId
+resolveFromGpid(gpid) → clientId, vcitaId, dudaSiteName, gbpLocationId, gbpOrg
   │
   ▼ (parallel via Promise.allSettled)
 ┌─────────────────────────────────────────────────────────────┐
@@ -66,7 +70,7 @@ All credentials in **AWS Secrets Manager (us-east-1)** under `tsi/` namespace.
 
 | Secret | Contents |
 |--------|----------|
-| `tsi/mcp/gbp` | GBP OAuth: client_id, client_secret, refresh_token |
+| `tsi/mcp/gbp` | GBP OAuth: client_id, client_secret, refresh_token (agency), refresh_token_middleman, refresh_token_original, refresh_token_suspended |
 | `tsi/mcp/falcon` | Falcon GraphQL API key + endpoint |
 | `tsi/mcp/duda` | Duda API username + password |
 | `tsi/mcp/yext` | Yext API key |
