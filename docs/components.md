@@ -12,6 +12,8 @@
 
 **Flow:** Auth check → `resolveFromGpid(gpid)` → fans out to GBP/GBP Reviews/Duda/Yext/vcita via `Promise.allSettled` → returns `ReportData`
 
+**GBP org passthrough (updated 2026-06-08):** Destructures `gbpOrg` from `ResolvedParams` and passes it to `getGbpInsights(locationId, days, gbpOrg)` and `getGbpReviews(locationId, gbpOrg)` so the metrics/reviews calls use the same OAuth token as the org that resolved the location. Matches the same fix applied to `lib/retention/fetcher.ts`.
+
 **Error handling:** Per-platform errors captured in `errors` field without blocking other platforms.
 
 ---
@@ -687,7 +689,4 @@ TypeScript types for the retention pipeline.
 
 **Cancellation History benchmark table (updated):** Added rows for `competitorsNamed`, `priorSaveSolutions`, `currentScheduledCancellation.saveSolutions`, and `currentScheduledCancellation.competitor`.
 
-**`cancellation_history` output dimension (updated):** `actual` object now includes `competitorsNamed`, `currentCompetitor`, and `saveSolutionsAlreadyOffered`. Narrative and action instructions updated to surface competitor name and warn the CSR if prior save solutions have already been exhausted.
-
-**TICKET SUBJECT + BODY READING rule (updated):** Model now reads both `subject` AND `body` when classifying open tickets as real service gaps vs. workflow artifacts.
-
+**`cancellation_history` output dimension (updated):** `actual` object now includes `competitorsNamed`, `currentCompetitor`,
