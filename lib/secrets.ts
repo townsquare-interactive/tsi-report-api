@@ -43,7 +43,10 @@ export async function getGbpCredentials() {
   return {
     clientId: s['client_id'],
     clientSecret: s['client_secret'],
-    refreshToken: s['refresh_token'],
+    refreshToken: s['refresh_token'],                              // agency (~9k active locations)
+    refreshTokenMiddleman: s['refresh_token_middleman'] ?? null,  // middleman (~3,444 locations)
+    refreshTokenOriginal: s['refresh_token_original'] ?? null,    // original (~24k locations)
+    refreshTokenSuspended: s['refresh_token_suspended'] ?? null,  // suspended (~1,845 locations)
   };
 }
 

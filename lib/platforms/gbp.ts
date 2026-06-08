@@ -11,8 +11,15 @@ interface GbpTokenResponse {
   access_token: string;
 }
 
-async function getAccessToken(): Promise<string> {
+// org: which TSI GBP org account resolved this location (agency/middleman/original/suspended).
+// Defaults to agency if omitted or unrecognized — preserves backwards compat.
+async function getAccessToken(org?: string | null): Promise<string> {
   const creds = await getGbpCredentials();
+  let refreshToken = creds.refreshToken; // agency default
+  if (org === 'middleman' && creds.refreshTokenMiddleman) refreshToken = creds.refreshTokenMiddleman;
+  else if (org === 'original' && creds.refreshTokenOriginal) refreshToken = creds.refreshTokenOriginal;
+  else if (org === 'suspended' && creds.refreshTokenSuspended) refreshToken = creds.refreshTokenSuspended;
+
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     signal: AbortSignal.timeout(8_000),
@@ -20,11 +27,11 @@ async function getAccessToken(): Promise<string> {
     body: new URLSearchParams({
       client_id: creds.clientId,
       client_secret: creds.clientSecret,
-      refresh_token: creds.refreshToken,
+      refresh_token: refreshToken,
       grant_type: 'refresh_token',
     }),
   });
-  if (!res.ok) throw new Error(`GBP token refresh failed: ${res.status}`);
+  if (!res.ok) throw new Error(`GBP token refresh failed (org=${org ?? 'agency'}): ${res.status}`);
   const data = await res.json() as GbpTokenResponse;
   return data.access_token;
 }
@@ -109,9 +116,10 @@ async function getGbpSearchKeywords(
 
 export async function getGbpInsights(
   locationId: string,
-  periodDays: number
+  periodDays: number,
+  org?: string | null
 ): Promise<GbpInsights> {
-  const accessToken = await getAccessToken();
+  const accessToken = await getAccessToken(org);
   const endDate = new Date();
   const startDate = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
 
@@ -158,8 +166,8 @@ export async function getGbpPostsLive(locationId: string, accessToken?: string):
   return (data.localPosts ?? []).filter((p) => p.state === 'LIVE').length;
 }
 
-export async function getGbpReviews(locationId: string): Promise<GbpReview[]> {
-  const accessToken = await getAccessToken();
+export async function getGbpReviews(locationId: string, org?: string | null): Promise<GbpReview[]> {
+  const accessToken = await getAccessToken(org);
 
   // locationId format: "locations/123..." — derive account path for v4 API
   const res = await fetch(

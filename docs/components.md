@@ -61,7 +61,9 @@
 
 **Export:** `resolveFromGpid(gpid: string): Promise<ResolvedParams>`
 
-**ResolvedParams:** `{ clientId, vcitaId, dudaSiteName, gbpLocationId, businessName }`
+**ResolvedParams:** `{ clientId, vcitaId, dudaSiteName, gbpLocationId, gbpOrg, businessName }`
+
+`gbpOrg` — which TSI GBP org account resolved the location (`agency` | `middleman` | `original` | `suspended` | `null`). Passed to `gbp.ts` so metrics/reviews calls use the same token that found the location.
 
 **Flow:**
 1. Falcon reverse-lookup by GPID (TI-13737): `clients(filter: { externalServiceId: { gpId: $gpid } })`
@@ -69,23 +71,25 @@
    - `dudaSiteName` is guaranteed active/published site (TI-13738)
 2. Yext entity: GPID → `googlePlaceId` + `googleAccountId`
    - `googlePlaceId` is the primary GBP lookup key (exact, stable, no name fragility)
-   - `googleAccountId` kept as last-resort fallback
-3. GBP lookup — four-tier priority:
-   a. Agency Account filtered by `metadata.placeId="{placeId}"` (preferred — 1 API call, exact match)
-   b. Agency Account filtered by `storeCode="{GPID}-001"` (spaces preserved, e.g. `TI JULEEA001-001`)
-   c. Agency Account filtered by `title="{businessName}"` (fragile — name mismatches cause silent nulls)
-   d. Client's own Google account filtered by title (last resort — usually inaccessible)
+   - `googleAccountId` retained for signature compat but not used (TSI OAuth has no access to client accounts)
+3. GBP multi-org cascade — searches 4 TSI org accounts in order: **Agency → Middleman → Original → Suspended**
+   Within each org, all location groups are searched using the same 5-step cascade:
+   a. `metadata.placeId` filter — exact, fast, stable (preferred)
+   b. `storeCode="{GPID}-001"` — both space-preserved and no-space formats
+   c. `phone="{mainPhone}"` — from Yext, reliable for clients with blank/CID storeCodes
+   d. `title="{businessName}"` — exact match (fragile)
+   e. `title:"{first 2 words}"` → `title:"{first word}"` — contains fallback with overlap validation
+   Each strategy is exhausted across ALL accounts in an org before the next strategy is tried, preventing a weak title match in account A from beating a clean storeCode match in account B.
 
-**Falcon ExternalServiceIdFilter schema:**
-`{ gpId, dudaSiteName, vcitaBusinessId, yextId, sociAccountId, freshdeskCompanyId, pageRankUrl }`
+**GBP org accounts (location groups only):**
+- **Agency** (`accounts/105329348540167006988`) — 9,638 locations; most active TSI customers
+- **Middleman** — 3 groups: `105184842354302665018` (GBP TSI), `115706322102031373902` (MANAGER ACCESS), `104352906497501100185` (PRIMARY OWNER)
+- **Original** — 4 groups: `110889275658012598851` (TSIGMB), `116740707640110849659` (X-Don't Put New), `109048502680893737205` (Y-No Directory), `107749218258047067322` (TRANSFER FROM LEGACY)
+- **Suspended** — 4 groups: `100171665983162263460` (SUSPENDED GROUP), `103754244781720486229` (VERIFIED FROM SUSPENDED), `113850092905456226575` (NO CLIENT OWNER), `115636265935701117146` (Bad Store Codes)
 
-**GBP Agency Account:** `accounts/105329348540167006988` (LOCATION_GROUP) — 9,638 TSI client locations  
-**GBP OAuth account:** `gbp.agency@townsquaredigital.com` — authorized 2026-05-21 via `generate-token.js`  
-**Google Cloud project:** `rosy-strata-448619-k8` (org: `townsquaregbp.com`) — OAuth app set to External/Production  
+**GBP OAuth accounts (one refresh token per org):** stored in AWS secret `tsi/mcp/gbp` as `refresh_token` (agency), `refresh_token_middleman`, `refresh_token_original`, `refresh_token_suspended`  
 **StoreCode format:** `{GPID}-001` (spaces preserved) — e.g. `"TI JULEEA001"` → `"TI JULEEA001-001"`  
-**Confirmed working:** TI JULEEA001 → `locations/11851525588319014417`, 1,083 impressions (2026-05-21)
-
-**Deployed:** `dpl_67nS4qD2V46MRFMxTde3RRinJpWH` (2026-05-21)
+**Google Cloud project:** `rosy-strata-448619-k8` (org: `townsquaregbp.com`) — OAuth app set to External/Production
 
 ---
 
@@ -98,6 +102,8 @@
 **Exports:** `getFalconCredentials`, `getGbpCredentials`, `getDudaCredentials`, `getYextCredentials`, `getVcitaCredentials`, `getFreshdeskCredentials`
 
 **Secret names:** `tsi/mcp/falcon`, `tsi/mcp/gbp`, `tsi/mcp/duda`, `tsi/mcp/yext`, `tsi/mcp/vcita`, `tsi/mcp/freshdesk`
+
+**`tsi/mcp/gbp` keys (updated 2026-06-08):** `client_id`, `client_secret`, `refresh_token` (agency), `refresh_token_middleman`, `refresh_token_original`, `refresh_token_suspended`. `getGbpCredentials()` returns all four refresh tokens; `resolve.ts` uses each org's token to search that org's location groups.
 
 ---
 
@@ -147,9 +153,9 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 **Purpose:** GBP insights, search keywords, live post count, and reviews.
 
 **Exports:**
-- `getGbpInsights(locationId, periodDays)` — 7 metrics via `getDailyMetricsTimeSeries` + `getGbpPostsLive` + `getGbpSearchKeywords` (all parallel). Returns totals including `postsLive` and `searchKeywords`.
+- `getGbpInsights(locationId, periodDays, org?)` — 7 metrics via `getDailyMetricsTimeSeries` + `getGbpPostsLive` + `getGbpSearchKeywords` (all parallel). Returns totals including `postsLive` and `searchKeywords`. `org` param selects the correct OAuth token for the org that owns this location.
 - `getGbpPostsLive(locationId, accessToken?)` — counts LIVE posts via GBP v4 API.
-- `getGbpReviews(locationId)` — last 10 reviews via v4 API.
+- `getGbpReviews(locationId, org?)` — last 10 reviews via v4 API. `org` param selects the correct OAuth token.
 
 **Timeouts (added 2026-05-28):** All fetch calls carry `AbortSignal.timeout()` — 8s on OAuth token refresh, 10s on all GBP API calls. Prevents a slow Google endpoint from hanging the Vercel function indefinitely.
 
@@ -683,4 +689,5 @@ TypeScript types for the retention pipeline.
 
 **`cancellation_history` output dimension (updated):** `actual` object now includes `competitorsNamed`, `currentCompetitor`, and `saveSolutionsAlreadyOffered`. Narrative and action instructions updated to surface competitor name and warn the CSR if prior save solutions have already been exhausted.
 
-**TICKET SUBJECT + BODY READING rule (updated):** Model now reads both `subject` AND `body` when classifying open tickets as real service gaps vs. workflow art
+**TICKET SUBJECT + BODY READING rule (updated):** Model now reads both `subject` AND `body` when classifying open tickets as real service gaps vs. workflow artifacts.
+

@@ -30,7 +30,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
 export async function fetchClientData(gpid: string, periodDays: number): Promise<FetchedData> {
   // Step 1: Resolve all platform IDs from GPID
   const resolved = await resolveFromGpid(gpid);
-  const { clientId, vcitaId, dudaSiteName, gbpLocationId, businessName } = resolved;
+  const { clientId, vcitaId, dudaSiteName, gbpLocationId, gbpOrg, businessName } = resolved;
 
   // Step 2: Falcon — full client metadata + activities
   const { client, activities } = await getClientById(clientId, periodDays);
@@ -45,8 +45,8 @@ export async function fetchClientData(gpid: string, periodDays: number): Promise
 
   // Step 4: Fan out to all platforms in parallel
   const [gbpResult, gbpReviewsResult, dudaResult, yextResult, vcitaResult, sociResult] = await Promise.allSettled([
-    gbpLocationId ? getGbpInsights(gbpLocationId, periodDays) : Promise.resolve(null),
-    gbpLocationId ? getGbpReviews(gbpLocationId) : Promise.resolve([]),
+    gbpLocationId ? getGbpInsights(gbpLocationId, periodDays, gbpOrg) : Promise.resolve(null),
+    gbpLocationId ? getGbpReviews(gbpLocationId, gbpOrg) : Promise.resolve([]),
     dudaSiteName ? withRetry(() => getDudaData(dudaSiteName, periodDays), 'Duda') : Promise.resolve(null),
     withRetry(() => getYextData(gpid, periodDays), 'Yext'),
     vcitaId ? withRetry(() => getVcitaData(vcitaId, periodDays), 'vcita') : Promise.resolve(null),

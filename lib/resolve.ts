@@ -1,25 +1,37 @@
 // Dynamic resolution of all platform IDs from a GPID.
 //
-// Flow (updated for TI-13737 + TI-13738 + Place ID fix + Agency Account migration):
+// Flow (updated for TI-13737 + TI-13738 + Place ID fix + Agency Account migration + multi-org GBP):
 //   1. Falcon reverse-lookup: GPID → client directly via externalServiceId filter
 //      Returns: clientId, vcitaId, dudaSiteName (active site per TI-13738), businessName
 //   2. Yext entity: GPID → googleAccountId + googlePlaceId
 //      googlePlaceId used for direct GBP lookup (fast, exact, no name-mismatch fragility)
 //      googleAccountId kept as last-resort fallback
-//   3. GBP lookup order:
-//      a) Agency Account filtered by metadata.placeId (exact, fast — preferred)
-//      b) Agency Account filtered by storeCode = GPID + "-001" (e.g. "TI ROOFIN047" → "TI ROOFIN047-001")
-//      c) Agency Account filtered by title (name match — fragile fallback)
-//      d) Client's own Google account filtered by title (rarely accessible, safety net)
+//   3. GBP multi-org lookup — searches 4 TSI org accounts in order:
+//      Agency → Middleman → Original → Suspended
+//      Within each org, all location groups are searched using the same cascade:
+//        a) metadata.placeId filter (exact, fast — preferred)
+//        b) storeCode filter: GPID + "-001" (both space-preserved and no-space formats)
+//        c) phone filter (from Yext mainPhone)
+//        d) title exact match
+//        e) title-contains (2 words then 1 word, stripping LLC/Inc/Corp etc.)
+//      Returns locationId + which org resolved it (used by gbp.ts to select the right token)
 //
-// GBP OAuth account: gbp.agency@townsquaredigital.com (authorized 2026-05-21)
-// Agency Account: accounts/105329348540167006988 — 9,638 TSI client locations
-// StoreCode format: {GPID}-001 — SPACES PRESERVED (e.g. "TI ROOFIN047" → "TI ROOFIN047-001")
-// Confirmed via GBP Manager screenshot 2026-06-01 — store code column shows spaces in storeCode
+// Org account IDs (location groups only — not the org root accounts):
+//   Agency:    accounts/105329348540167006988 (9,638 locations — most active TSI customers)
+//   Middleman: accounts/105184842354302665018 (GBP TSI)
+//              accounts/115706322102031373902 (MANAGER ACCESS ONLY)
+//              accounts/104352906497501100185 (PRIMARY OWNER)
+//   Original:  accounts/110889275658012598851 (TSIGMB)
+//              accounts/116740707640110849659 (X - Don't Put New)
+//              accounts/109048502680893737205 (Y - No Directory Listing)
+//              accounts/107749218258047067322 (TRANSFER FROM LEGACY)
+//   Suspended: accounts/100171665983162263460 (SUSPENDED GROUP)
+//              accounts/103754244781720486229 (VERIFIED FROM SUSPENDED)
+//              accounts/113850092905456226575 (NO CLIENT OWNER)
+//              accounts/115636265935701117146 (Bad Store Codes)
 
 import { getFalconCredentials, getGbpCredentials, getYextCredentials } from './secrets';
 
-const GBP_TSI_ACCOUNT = 'accounts/105329348540167006988'; // Agency Account (9,638 TSI locations — confirmed correct in gbp-auth-brief.md 2026-05-21)
 const YEXT_BASE = 'https://api.yextapis.com/v2';
 const YEXT_API_VERSION = '20230301';
 
@@ -28,6 +40,7 @@ export interface ResolvedParams {
   vcitaId: string | null;
   dudaSiteName: string | null;
   gbpLocationId: string | null;
+  gbpOrg: string | null;  // which org account resolved the GBP location (agency/middleman/original/suspended)
   businessName: string;
 }
 
@@ -176,126 +189,199 @@ async function searchGbpAccount(
   return data.locations?.[0]?.name ?? null;
 }
 
-// ── GBP: find location ID — Place ID → storeCode → title → client account ────
-// Lookup order:
-//   1. Agency Account + metadata.placeId filter (exact, fast — preferred)
-//   2. Agency Account + storeCode filter: GPID_no_spaces + "-001" (e.g. TIJULEEA001-001)
-//   3. Agency Account + title filter (fragile — name mismatches cause silent nulls)
-//   4. Client's own Google account + title filter (rarely accessible, safety net)
-async function getGbpLocationId(
-  gpid: string,
-  businessName: string,
-  fallbackGoogleAccountId: string | null,
-  googlePlaceId: string | null,
-  mainPhone: string | null
+// ── GBP: exchange a refresh token for a short-lived access token ──────────────
+async function refreshGbpToken(
+  clientId: string,
+  clientSecret: string,
+  refreshToken: string,
+  orgName: string
 ): Promise<string | null> {
-  const creds = await getGbpCredentials();
-
   const tokRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      client_id: creds.clientId,
-      client_secret: creds.clientSecret,
-      refresh_token: creds.refreshToken,
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
       grant_type: 'refresh_token',
     }),
   });
   if (!tokRes.ok) {
     const errText = await tokRes.text().catch(() => '');
-    console.error(`[GBP] OAuth token refresh FAILED for ${gpid}: HTTP ${tokRes.status} — ${errText.slice(0, 200)}`);
+    console.error(`[GBP] Token refresh FAILED for org "${orgName}": HTTP ${tokRes.status} — ${errText.slice(0, 200)}`);
     return null;
   }
   const { access_token } = await tokRes.json() as { access_token: string };
-  console.log(`[GBP] OAuth token refreshed OK for ${gpid}`);
+  return access_token;
+}
 
-  // 1. Place ID lookup (preferred — exact, no name fragility)
-  if (googlePlaceId) {
-    const byPlaceId = await searchGbpAccountByPlaceId(GBP_TSI_ACCOUNT, googlePlaceId, access_token);
-    if (byPlaceId) return byPlaceId;
-  }
+// ── GBP: multi-org location lookup ───────────────────────────────────────────
+// Searches all 4 TSI GBP org accounts in order: Agency → Middleman → Original → Suspended.
+// Within each org, all location groups are searched using the full cascade:
+//   placeId → storeCode (both formats) → phone → title-exact → title-contains
+// Each strategy is exhausted across all accounts in an org before the next strategy is tried.
+// This prevents a weak title match in account A from beating a clean storeCode match in account B.
+async function getGbpLocationId(
+  gpid: string,
+  businessName: string,
+  _fallbackGoogleAccountId: string | null,  // retained for signature compat — not used (no OAuth access to client accounts)
+  googlePlaceId: string | null,
+  mainPhone: string | null
+): Promise<{ locationId: string; org: string } | null> {
+  const creds = await getGbpCredentials();
 
-  // 2. StoreCode lookup — try both formats since TSI agency account has mixed history:
-  //    New format (spaces preserved): "TI ROOFIN047-001" — confirmed working 2026-06-01
-  //    Old format (spaces stripped):  "TIROOFIN047-001" — may exist for older onboarded clients
-  for (const storeCode of [`${gpid}-001`, `${gpid.replace(/\s+/g, '')}-001`]) {
-    const encodedSC = encodeURIComponent(`storeCode="${storeCode}"`);
-    const scRes = await fetch(
-      `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${encodedSC}`,
-      { headers: { Authorization: `Bearer ${access_token}` } }
-    );
-    if (scRes.ok) {
-      const scData = await scRes.json() as { locations?: Array<{ name: string }> };
-      if (scData.locations?.[0]?.name) {
-        console.log(`[GBP] storeCode SUCCESS for ${gpid} (format="${storeCode}"): ${scData.locations[0].name}`);
-        return scData.locations[0].name;
-      }
-    }
-  }
-  console.log(`[GBP] storeCode: 0 results for ${gpid} (tried both space-preserved and no-space formats)`);
-
-  // 3c. Phone number filter — reliable for clients with blank/CID storeCodes
-  if (mainPhone && mainPhone.length >= 7) {
-    const phoneFilter = encodeURIComponent(`phone="${mainPhone}"`);
-    const phoneRes = await fetch(
-      `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${phoneFilter}`,
-      { headers: { Authorization: `Bearer ${access_token}` } }
-    );
-    if (phoneRes.ok) {
-      const phoneData = await phoneRes.json() as { locations?: Array<{ name: string; title: string }> };
-      if (phoneData.locations?.[0]?.name) {
-        console.log(`[GBP] phone filter SUCCESS for ${gpid} (phone=${mainPhone}): ${phoneData.locations[0].name}`);
-        return phoneData.locations[0].name;
-      }
-    }
-  }
-
-  // 4. Name-based lookup — exact match first, then contains
-  const byName = await searchGbpAccount(GBP_TSI_ACCOUNT, businessName, access_token);
-  if (byName) return byName;
-
-  // 3b. Title-contains fallback — uses AIP-160 `:` operator for partial match
-  // Handles: Falcon name ("Eash Co. LLC") vs GBP name ("Eash Co."), blank storeCodes, CID storeCodes
-  // Strategy: strip common suffix words (LLC, Inc, Corp, Co., Company, of, and, &, the, services, solutions)
-  //           then take the first 2 meaningful words as the search term
+  // Pre-compute title-contains search terms (used in step 5)
   const SUFFIX_WORDS = /\b(llc|inc|corp|ltd|co|company|companies|group|services|solutions|and|of|the|&|at|by)\b/gi;
   const cleanedName = businessName
-    .replace(/[,\.]/g, ' ')           // remove punctuation
-    .replace(SUFFIX_WORDS, ' ')        // remove suffix/filler words
-    .replace(/\s+/g, ' ')             // collapse spaces
+    .replace(/[,.]/g, ' ')
+    .replace(SUFFIX_WORDS, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
-  // Take first 2 words of cleaned name — specific enough to avoid false positives, forgiving of suffix differences
   const words = cleanedName.split(/\s+/).filter(w => w.length > 1);
   const shortName = words.slice(0, 2).join(' ');
 
-  if (shortName.length >= 3) {
-    // Try the 2-word contains, then fall back to first word only if no match
-    for (const query of [shortName, words[0]].filter(Boolean)) {
-      if (!query || query.length < 3) continue;
-      const containsFilter = encodeURIComponent(`title:"${query}"`);
-      const containsRes = await fetch(
-        `https://mybusinessbusinessinformation.googleapis.com/v1/${GBP_TSI_ACCOUNT}/locations?readMask=name,title&filter=${containsFilter}`,
-        { headers: { Authorization: `Bearer ${access_token}` } }
-      );
-      if (containsRes.ok) {
-        const containsData = await containsRes.json() as { locations?: Array<{ name: string; title: string }> };
-        // Only use the result if the returned title meaningfully overlaps with businessName (avoid false positives)
-        const matched = containsData.locations?.find(loc => {
-          const locTitle = loc.title?.toLowerCase() ?? '';
-          const bizWords = businessName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-          return bizWords.some(w => locTitle.includes(w));
-        });
-        if (matched?.name) {
-          console.log(`[GBP] title-contains SUCCESS for ${gpid} (query="${query}", matched="${matched.title}"): ${matched.name}`);
-          return matched.name;
+  // StoreCode variants — deduplicated in case gpid has no spaces
+  const storeCodes = [...new Set([`${gpid}-001`, `${gpid.replace(/\s+/g, '')}-001`])];
+
+  // Org definitions — searched in this order
+  const orgs = [
+    {
+      name: 'agency',
+      accounts: ['accounts/105329348540167006988'],
+      refreshToken: creds.refreshToken,
+    },
+    {
+      name: 'middleman',
+      accounts: [
+        'accounts/105184842354302665018',  // GBP TSI
+        'accounts/115706322102031373902',  // MANAGER ACCESS ONLY
+        'accounts/104352906497501100185',  // PRIMARY OWNER
+      ],
+      refreshToken: creds.refreshTokenMiddleman,
+    },
+    {
+      name: 'original',
+      accounts: [
+        'accounts/110889275658012598851',  // TSIGMB
+        'accounts/116740707640110849659',  // X - Don't Put New
+        'accounts/109048502680893737205',  // Y - No Directory Listing
+        'accounts/107749218258047067322',  // TRANSFER FROM LEGACY
+      ],
+      refreshToken: creds.refreshTokenOriginal,
+    },
+    {
+      name: 'suspended',
+      accounts: [
+        'accounts/100171665983162263460',  // SUSPENDED GROUP
+        'accounts/103754244781720486229',  // VERIFIED FROM SUSPENDED
+        'accounts/113850092905456226575',  // NO CLIENT OWNER
+        'accounts/115636265935701117146',  // Bad Store Codes
+      ],
+      refreshToken: creds.refreshTokenSuspended,
+    },
+  ];
+
+  for (const org of orgs) {
+    if (!org.refreshToken) {
+      console.warn(`[GBP] Skipping org "${org.name}" — no refresh token configured`);
+      continue;
+    }
+
+    const access_token = await refreshGbpToken(creds.clientId, creds.clientSecret, org.refreshToken, org.name);
+    if (!access_token) continue;
+
+    console.log(`[GBP] Searching org "${org.name}" (${org.accounts.length} account(s)) for ${gpid}`);
+
+    // ── Step 1: Place ID ──────────────────────────────────────────────────────
+    // Exact match on stable Google place ID — most reliable signal
+    if (googlePlaceId) {
+      for (const accountId of org.accounts) {
+        const hit = await searchGbpAccountByPlaceId(accountId, googlePlaceId, access_token);
+        if (hit) {
+          console.log(`[GBP] placeId SUCCESS in org "${org.name}" (acct=${accountId}): ${hit}`);
+          return { locationId: hit, org: org.name };
         }
       }
     }
-  }
 
-  // Note: individual client Google accounts NOT searched — TSI OAuth (gbp.agency@...)
-  // does not have access to client-owned accounts. fallbackGoogleAccountId retained
-  // for future use if access is ever granted, but not used in current lookup chain.
+    // ── Step 2: StoreCode ─────────────────────────────────────────────────────
+    // Deterministic — storeCode = GPID + "-001". Try both formats (spaces preserved vs stripped).
+    for (const storeCode of storeCodes) {
+      const encodedSC = encodeURIComponent(`storeCode="${storeCode}"`);
+      for (const accountId of org.accounts) {
+        const scRes = await fetch(
+          `https://mybusinessbusinessinformation.googleapis.com/v1/${accountId}/locations?readMask=name,title&filter=${encodedSC}`,
+          { headers: { Authorization: `Bearer ${access_token}` } }
+        );
+        if (scRes.ok) {
+          const scData = await scRes.json() as { locations?: Array<{ name: string }> };
+          if (scData.locations?.[0]?.name) {
+            console.log(`[GBP] storeCode SUCCESS in org "${org.name}" (format="${storeCode}"): ${scData.locations[0].name}`);
+            return { locationId: scData.locations[0].name, org: org.name };
+          }
+        }
+      }
+    }
+    console.log(`[GBP] storeCode: no results for ${gpid} in org "${org.name}" (tried: ${storeCodes.join(', ')})`);
+
+    // ── Step 3: Phone ─────────────────────────────────────────────────────────
+    // Reliable for clients with blank or CID-format storeCodes
+    if (mainPhone && mainPhone.length >= 7) {
+      const phoneFilter = encodeURIComponent(`phone="${mainPhone}"`);
+      for (const accountId of org.accounts) {
+        const phoneRes = await fetch(
+          `https://mybusinessbusinessinformation.googleapis.com/v1/${accountId}/locations?readMask=name,title&filter=${phoneFilter}`,
+          { headers: { Authorization: `Bearer ${access_token}` } }
+        );
+        if (phoneRes.ok) {
+          const phoneData = await phoneRes.json() as { locations?: Array<{ name: string; title: string }> };
+          if (phoneData.locations?.[0]?.name) {
+            console.log(`[GBP] phone SUCCESS in org "${org.name}" (phone=${mainPhone}): ${phoneData.locations[0].name}`);
+            return { locationId: phoneData.locations[0].name, org: org.name };
+          }
+        }
+      }
+    }
+
+    // ── Step 4: Title exact ───────────────────────────────────────────────────
+    // Fragile — name mismatches between Falcon and GBP cause silent nulls
+    for (const accountId of org.accounts) {
+      const hit = await searchGbpAccount(accountId, businessName, access_token);
+      if (hit) {
+        console.log(`[GBP] title-exact SUCCESS in org "${org.name}" (acct=${accountId}): ${hit}`);
+        return { locationId: hit, org: org.name };
+      }
+    }
+
+    // ── Step 5: Title-contains ────────────────────────────────────────────────
+    // Last resort — strip suffix words, search by first 2 meaningful words then 1 word.
+    // Validates overlap against businessName to avoid false positives.
+    if (shortName.length >= 3) {
+      for (const query of [shortName, words[0]].filter((q): q is string => !!q && q.length >= 3)) {
+        const containsFilter = encodeURIComponent(`title:"${query}"`);
+        for (const accountId of org.accounts) {
+          const containsRes = await fetch(
+            `https://mybusinessbusinessinformation.googleapis.com/v1/${accountId}/locations?readMask=name,title&filter=${containsFilter}`,
+            { headers: { Authorization: `Bearer ${access_token}` } }
+          );
+          if (containsRes.ok) {
+            const containsData = await containsRes.json() as { locations?: Array<{ name: string; title: string }> };
+            const matched = containsData.locations?.find(loc => {
+              const locTitle = loc.title?.toLowerCase() ?? '';
+              const bizWords = businessName.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+              return bizWords.some(w => locTitle.includes(w));
+            });
+            if (matched?.name) {
+              console.log(`[GBP] title-contains SUCCESS in org "${org.name}" (query="${query}", matched="${matched.title}"): ${matched.name}`);
+              return { locationId: matched.name, org: org.name };
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`[GBP] No match in org "${org.name}" for ${gpid} — trying next org`);
+  }
 
   return null;
 }
@@ -310,11 +396,15 @@ export async function resolveFromGpid(gpid: string): Promise<ResolvedParams> {
     () => ({ googleAccountId: null, googlePlaceId: null, mainPhone: null })
   );
 
-  // Step 3: GBP — Place ID → storeCode (both formats) → phone → title-exact → title-contains
-  const gbpLocationId = await getGbpLocationId(
+  // Step 3: GBP — multi-org cascade: Agency → Middleman → Original → Suspended
+  //         Within each org: placeId → storeCode (both formats) → phone → title-exact → title-contains
+  const gbpResult = await getGbpLocationId(
     gpid, businessName,
     googleData.googleAccountId, googleData.googlePlaceId, googleData.mainPhone
   ).catch(() => null);
 
-  return { clientId, vcitaId, dudaSiteName, gbpLocationId, businessName };
+  const gbpLocationId = gbpResult?.locationId ?? null;
+  const gbpOrg = gbpResult?.org ?? null;
+
+  return { clientId, vcitaId, dudaSiteName, gbpLocationId, gbpOrg, businessName };
 }
