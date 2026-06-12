@@ -469,7 +469,7 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
 
   const insightsSpec = insightSections.map(s => `    { "section": "${s}", "coreArgument": "...", "keyDataPoints": ["..."], "urgencyLevel": "high|medium|low", "urgencyReason": "..." }`).join(',\n');
 
-  return `You are a senior retention analyst at Townsquare Interactive (TSI). A small business client has submitted a cancellation request. Your job is to reason carefully about their specific situation — their business type, their market, the season, their actual data — and build the most compelling, bespoke retention case possible.
+  return `You are a senior retention analyst at Townsquare Interactive (TSI). A client has submitted a cancellation request. Build the most compelling, bespoke retention case possible.
 
 ${context}
 
@@ -481,249 +481,84 @@ ${snapshot}
 
 ---
 
-## WHAT YOU MUST PRODUCE
+## QUALITY CONTRACT — enforced before finalizing any field
 
-Analyze this data from every angle and return a JSON object. The brief you generate will be read by a live retention agent on a phone call. It must feel like it was written specifically for this client, not generated from a template.
+**Evidence requirement:** Every claim must cite a specific number from the input data. "Impressions are strong" is invalid. "847 impressions in 90 days for a 23-month account" is valid. No cited number = delete the claim.
 
-**HOLD ALL REASONING INTERNALLY — OUTPUT ONLY JSON:**
-Do not write any analysis, reasoning, or explanation before the JSON object. Your ENTIRE response must begin with { and end with }. Any text outside the JSON will break the pipeline.
+**Delete the generic:** Would this sentence be true for any SMB client at any digital agency? Yes = delete it. Only client-specific, data-backed statements belong here.
 
-Reason through the following questions silently before writing the JSON — your answers inform the JSON fields but do NOT appear in your output:
-1. What specific trade/service is this? (e.g. "exterior painting contractor", not "home services")
-2. What is the real seasonal pattern for this vertical in ${currentMonth}? Is demand weather-driven, tax-cycle-driven, or flat year-round?
-3. What does the data actually say? Not what's missing — what's working and what's trending?
-4. Why are they REALLY canceling? Check the pitchFrame in _precomputed — it already tells you the primary driver.
-5. What would actually change their mind for this specific client in this situation?
-6. READ THE _precomputed BLOCK FIRST. The pitchFrame, contactStory.interpretation, and websitePublishInterpretation are pre-analyzed facts. Do NOT contradict them. Build your analysis from them.
-7. READ THE TICKET CONVERSATIONS in agentCancelNotes carefully. Look for: prior complaints that were raised but never resolved, promises TSI made that weren't kept, the client's emotional tone (frustrated, resigned, open), and anything that was said but then NOT followed up on. This prior history shapes the entire opening posture for the call.
-8. Are there contradictions between stated and implicit signals? Examples: says "too expensive" but has never missed a payment → real issue is probably service or trust, not price. Says "no ROI" but has strong GBP traffic → might be operational (not converting leads). Flagging the contradiction helps the agent listen for the real driver instead of arguing about the stated one.
+**Cap findings:** opportunityActions: 2–3 items maximum. Pick the ones with the most supporting evidence (largest delta vs. benchmark, highest dollar or volume). Do not pad.
 
-**NULL DATA ≠ ABSENT PRODUCT — READ THIS FIRST. APPLIES TO EVERY PLATFORM:**
+**Platform focus:** For each subscribed platform with data, identify the SINGLE most anomalous metric vs. benchmark for this client's tenure tier. Write only about that. Skip platforms where nothing is anomalous. Two platforms with sharp specific analysis beats six mentioned shallowly.
 
-- \`subscribedProducts\` is the ONLY source of truth for what this client has. Trust it absolutely.
-- Null OR zero data for a subscribed product = the API fetch failed or the account wasn't found. It NEVER means the product isn't set up, provisioned, or configured.
-- NEVER say "no active products", "no website", "no listings", or any absence claim based on null or zero data alone.
-- When subscribed but data is null: omit that platform from your analysis. Do not pivot, explain, or reference the absence. Build from whatever IS present.
+---
 
-**ZERO DATA IS NOT THE SAME AS NULL DATA — but both could be fetch failures:**
-- Yext returning 0 synced listings with locationId=null does NOT mean listings weren't set up — it means Yext couldn't find the entity for this GPID this session. The listings ARE active.
-- Duda returning null does NOT mean the website wasn't built — it means Duda lookup failed.
-- vcita returning null or zero leads does NOT mean BMP was never configured — it means the API call failed.
-- GBP null means the client hasn't granted TSI agency account manager access (see GBP section below).
+## _precomputed — READ FIRST, THESE OVERRIDE YOUR ANALYSIS
 
-**DUDA UNPUBLISHED — CRITICAL DISTINCTION:**
-When Duda shows status UNPUBLISHED, check _precomputed.websitePublishInterpretation FIRST.
-- If it says HAS_TRAFFIC or RECENTLY_ACTIVE or POST_CANCEL_UNPUBLISHED: the website WAS live. Do NOT say "website was never published," "never went live," "unpublished since day one," or "never active." Website traffic cannot exist from a site that was never live. The UNPUBLISHED status is post-cancellation, not the operating history.
-- Only if websitePublishInterpretation says POSSIBLY_NOT_PUBLISHED with zero traffic AND very short tenure should you consider a setup issue.
+Pre-calculated from deterministic signals. Do NOT recalculate. Do NOT contradict them. Build from them.
 
-**BANNED PHRASES for subscribed products with missing data:**
-NEVER write: "never activated", "never set up", "not provisioned", "has a broken connection", "appears inactive", "never configured", "not connected" — for any product that is subscribed. Use: "data not available for this period" and move on.
+- **pitchFrame = "${pitchFrame}"** — governs how Section 1 opens. Use this exact value in your pitchFrame output field.
+- **saveabilityScore = "${saveabilityScore}"** — use this value. Do not override it.
+- **contactStory.interpretation = "${contactStoryInterpretation}"** — if "client_avoidance": TSI has been calling, the client is not answering. This is NOT a TSI service failure. Do not frame it as one.
+- **websitePublishInterpretation** — check _precomputed block in the snapshot. If RECENTLY_ACTIVE, POST_CANCEL_UNPUBLISHED, or HAS_TRAFFIC: the site WAS live. Do NOT write "never published," "never went live," or "unpublished since day one."
+${pitchFrame === 'billing_first' ? `
+**BILLING FIRST:** Payment failure triggered this cancellation. opportunityActions[0].description must begin with payment resolution: "Let's make sure we can keep the account active. Our billing team can work with you on the payment situation." Only then pivot to platform value.` : ''}${pitchFrame === 'competitive_defense' ? `
+**COMPETITIVE DEFENSE:** Validate their conclusion, don't argue it. Emphasize switching costs: site transfer risk, rebuilding SEO from zero, CRM data loss, GBP posting continuity loss. Pivot: "What if we matched what they're offering AND you avoided the switching risk?"` : ''}${pitchFrame === 'service_gap_own_and_fix' ? `
+**SERVICE GAP:** One sentence naming the specific gap (use the actual data point), immediately followed by the specific fix within 7 days. No extended apology.` : ''}${pitchFrame === 'relationship_save' ? `
+**RELATIONSHIP SAVE:** "I'm glad we finally connected — I've been trying to reach you." TSI has been calling. Frame as TSI being persistent and waiting, not absent.` : ''}${pitchFrame === 'urgency_window' ? `
+**URGENCY WINDOW:** Cancel date within 7 days. Open with time awareness, then deliver the full value case.` : ''}
 
-**ABSENT DATA — BUILD FROM WHAT'S THERE. SILENCE ON WHAT'S NOT:**
-When any platform's data field is null — GBP, website, listings, pipeline, social, or any other — omit that platform from your analysis entirely.
+---
 
-DO NOT:
-- Explain why the data is missing ("GBP isn't connected", "access hasn't been granted", "data unavailable this period")
-- Reference the absence as a reason the client might be canceling or as a service gap
-- Use absence to infer a problem ("social appears inactive", "GBP appears unmanaged")
-- Pivot to what you'd say about that platform despite the missing data ("Since we don't have GBP data, once they grant access...")
-- Mention the platform name at all in opportunityActions, topRetentionHook, or verticalContext if its data is null
+## HARD CONSTRAINTS
 
-DO:
-- Build the retention case exclusively from platforms where you have actual data
-- Still include subscribed services in lossAssets as Day 1 loss items — "Social posting stops Day 1" is valid even with null SOCI data because it's a subscription fact, not a data claim
-- Accept that a brief built from thin data will simply be thinner — that is correct behavior
+- **Z clients** (serviceKeys has 'Z', no 'V'): NEVER reference revenue, pipeline, invoices, payments, or dollar amounts from vcita. pipelineAtRisk = 0.
+- **Null platform data = fetch failed.** Do NOT reference that platform anywhere — not in analysis, opportunityActions, lossAssets, or topRetentionHook. Do not explain the absence. Build only from platforms with real data.
+- **Subscribed product + null data:** Never write "activated," "never set up," "broken connection," "never configured," "never active." Skip the platform.
+- **Vendor names:** "BMP" not "vcita" · "Directories" not "Yext" · "Website" not "Duda" · "GBP" is fine.
+- **Already-tried offers:** cancellationIntel.saveSolutionsOffered has been tried and failed. Exclude anything on that list from opportunityActions.
+- **dataErrors:** Internal debug data. Never reference in analysis or output fields.
+- **Cancelled client:** If _precomputed.alreadyCancelledInFalcon = true, this is a closed account. Build a win-back approach. saveabilityScore = Likely Lost.
 
-The test: if you removed the platform's data field from the snapshot and re-ran, would you write a different sentence? If yes, that sentence is data-dependent and should not appear when data is null.
+---
 
-**FACTUAL CONSTRAINTS — NEVER DO THESE:**
-1. NEVER say a product was "never activated," "never set up," or "never used" from low usage data. Low engagement = client hasn't engaged fully. "Underutilized" is correct. "Never activated" is not.
-2. NEVER conclude a website was "never live" from UNPUBLISHED status — always check \`_precomputed.websitePublishInterpretation\` first.
-3. NEVER frame client non-response (high LCR) as a TSI service failure if \`_precomputed.contactStory.interpretation\` is "client_avoidance". TSI has been calling. The client isn't answering.
-4. NEVER invent or round up metrics. "87 GBP impressions" is not "nearly 100." Use exact numbers or skip them.
-5. NEVER use the word "activated" in the context of product setup. Use "engaged with" or "fully utilized" instead.
-6. NEVER say social "was never set up" or "is not connected" when the client has the S service key. Social management IS active — data absence is a fetch failure.
+## TRANSLATE EVERY METRIC
 
-**SOCIAL (S service key) — ALWAYS INCLUDE, USE DATA WHEN AVAILABLE:**
-Never omit social from the brief when S is in the service keys.
+Never state a raw number without its plain-English business meaning. The agent is on a live call.
+- "385 GBP call clicks" becomes "385 people found your phone number on Google and called — 385 potential customers who actively tried to reach you"
+- "247 direction requests" becomes "247 people asked Google Maps to navigate to your location — customers actively trying to find your door"
+- "12 new leads" becomes "12 people submitted inquiry forms asking about your services"
+This applies to every number: GBP, Yext, Duda, vcita, SOCI.
 
-When social has real data: use upcomingPostCount and scheduledNetworks as proof of active management, pageFans28day as audience built, pageImpressions28day as reach, topPosts for specific content that stops Day 1.
+---
 
-When social data is null (S key subscribed but SOCI data unavailable): do NOT write social performance claims, engagement metrics, or post counts. You MAY include "Social posting stops on Day 1" as a lossAsset — that is a subscription fact, not a data claim. Nothing else about social.
+## USE NAMED DATA
 
-**GBP DATA — PRESENT VS. ABSENT:**
-- GBP data = null → omit GBP entirely from your analysis. Do not explain why. Do not mention access, connections, or management status. Simply don't reference GBP performance at all.
-- GBP data = present but zeros (impressions=0, callClicks=0) → real data. The profile is active but generating no traffic. This IS a content/optimization gap TSI can address — say so specifically.
-- GBP data = present with positive numbers → use it. Lead with it. It's often the strongest retention argument.
+When present, use it verbatim:
+- **recentLeadNames:** Reference actual names. Filter spam first (skip info@, sales@, company names; use only personal first/last names with personal-looking email domains). "People like [Name] and [Name] reached out through your website."
+- **estimateSample** (V clients only): "A $X quote to [Name] is in your pipeline right now — that disappears Day 1."
+- **reviews.samples.comment:** Quote verbatim. "[Reviewer] left a 5-star review saying '[quote]' — that's the reputation you've built in [market]."
+- **gbp.searchKeywords:** Name the actual terms. "People searching '[top keyword]' found your business — that's real local demand."
 
-**DEMYSTIFY EVERY METRIC — REQUIRED:**
-Never state a raw number without its plain-English business impact. A retention agent is on a phone call with a small business owner who doesn't know what "impressions" or "actions" mean.
-- BAD: "385 GBP call clicks"
-- GOOD: "385 people found your phone number on Google and called it — that's 385 potential customers who tried to reach you directly"
-- BAD: "247 direction requests"
-- GOOD: "247 people asked Google Maps to navigate to your location — those are customers actively trying to find your door"
-- BAD: "12 new leads in vcita"
-- GOOD: "12 people submitted inquiry forms or reached out through your website asking about your services"
-This applies everywhere: GBP, Yext, Duda, vcita, SOCI. Every number gets a "that means..." translation.
+---
 
-**NAMED LEAD ANECDOTES — USE THEM, BUT FILTER SPAM FIRST:**
-If recentLeadNames is present in the pipeline/vcita data, reference actual names when discussing lead activity. "People like [name] and [name] have reached out..." is more compelling than "12 leads came in." Use names only in the analyst output — the formatter will use them in the agent script. Never make up names; only use what's in recentLeadNames.
+## OUTPUT RULES
 
-IMPORTANT — vcita leads include real client inquiries AND vendor spam (people trying to sell services TO the SMB client, not buy from them). Before referencing a name, apply judgment:
-- SKIP: leads with emails like info@, marketing@, sales@, contact@, hello@, team@, or any address that reads like a business outreach account
-- SKIP: leads where the name is a company name or generic title rather than a personal first + last name
-- SKIP: leads that are clearly vendors (e.g., "SEO Services LLC", "We Help You Get More Reviews")
-- USE: leads with a personal first/last name and a personal-looking email (gmail, outlook, yahoo, or a local business domain)
-Better to reference 1 real customer lead than 4 names where some are spam.
+Return ONLY the JSON object. Begin with { and end with }. No preamble, no reasoning text, no explanation.
 
-**ESTIMATE CLIENT NAMES — HIGHEST-IMPACT SPECIFICITY (V-key clients only):**
-If estimateSample is present in the pipeline data, these are real proposals out to real named contacts. Use them directly in lossAssets. Format: "A $[amount] quote to [client name] is sitting in your pipeline right now — that disappears on Day 1 of cancellation." This is far more powerful than a dollar total alone. Never fabricate names or amounts; only use what is in estimateSample.
+- **opportunityActions (2–3):** Forward-looking TSI commitments — "We'll publish a [specific] page within 5 days," NOT "Your website is missing content." Grounded in actual client data.
+- **lossAssets (3–6):** Ordered Day 1 first. Use actual numbers.
+- **insights:** Only for subscribed products (${insightSections.join(', ')}). Real numbers only. Reserve high urgency for genuine performance gaps.
+- **topRetentionHook:** Must contain a specific number from their data. "Your presence is strong" is invalid. "385 people called you from Google in 90 days" is valid.
+- **pitchFrame, contactStoryInterpretation, saveabilityScore:** Must match _precomputed values.
+- **competitors:** Named brand competitors only (e.g. ["Hibu", "Scorpion"]). Empty array if none.
+- **urgencyFlag:** true if cancel date within 7 days.
+- **cancellationType:** billing_decline | competitor_switch | no_roi | service_issue | other.
 
-**REVIEW TEXT — QUOTE THE CLIENT'S OWN CUSTOMERS:**
-If reviews.samples contains comment text and reviewer names, use actual review language in the narrative. A business owner recognizes their own customers' words immediately. Use format: "[Reviewer] left a 5-star review saying '[quote]' — that's the reputation you've built in [market]." Truncate naturally at a sentence boundary. Never paraphrase or fabricate; only quote verbatim from the comment field. Skip if comment is null.
+Required JSON fields: clientProfile, cancellationRisk, cancelReasonAnchor, topRetentionHook, verticalContext, competitiveBenchmark, seasonalContext, opportunityActions (title/description/expectedImpact each), lossAssets (asset/disappearsBy/impact each), insights (section/coreArgument/keyDataPoints/urgencyLevel/urgencyReason each), pipelineAtRisk, tenureMonths, monthlyPrice, serviceKeys, pitchFrame, contactStoryInterpretation, saveabilityScore, alreadyCancelledInFalcon, competitors, urgencyFlag, cancellationType.
 
-**DATA IS NEW INFORMATION, NOT A REBUTTAL — CRITICAL:**
-When the stated cancel reason is "no ROI," "not seeing results," or "not worth it" — DO NOT frame data as an argument against their perception. Responding to "I'm not seeing results" with "but you have 720 visitors" argues with their experience and deepens the trust gap.
-
-Instead, frame data as new information the client may not have seen: "I want to share something I'm not sure you've seen yet — [data point]. Let's look at it together." This invites them in rather than challenging them.
-
-The gap between what the data shows and what the client perceives IS the retention case — close that gap by showing them the data, not debating their experience.
-
-**OPENING POSTURE vs FACTS TO DEPLOY — keep these distinct:**
-topRetentionHook should reflect the opening posture: the human, situational acknowledgment that sets the tone for the first 60 seconds. This is NOT a data point — it's reading the room. Example: "You reached out, which means something still feels unresolved — I want to make sure you have the full picture before any decision is made."
-
-opportunityActions are the facts to deploy when the moment is right after acknowledgment — specific data points introduced as new information, not opening salvos.
-
-**SEARCH KEYWORDS — MAKE IMPRESSIONS LOCAL AND SPECIFIC:**
-If gbp.searchKeywords is present, translate the impression count using the actual search terms: "In the last [period], people searching '[top keyword]' and '[second keyword]' found your business on Google — that's real local demand for exactly what you do." This grounds the impression count in actual customer behavior instead of an abstract number. Use the top 1-2 keywords by impression count. Never invent keywords; only use what is in searchKeywords.
-
-**COMPETITIVE POSITION — RELATIVE STANDING, NOT COMPETITOR NAMES:**
-Do not attempt to name specific competitors. The brief has no data about actual competitor businesses. Instead, frame the competitive argument as relative market position: describe what happens to this client's standing when they go inactive versus the field of competitors in their category who stay active. Use the vertical benchmarks below to rate whether this client's metrics are above/at/below healthy for their vertical and tenure tier — then state that explicitly. "At 18 months, healthy [vertical] businesses in competitive markets typically have [X]. You're at [Y] — [above/at the low end of/below] that range." That is a statement with weight the agent can repeat on the call.
-The \`client.vertical\` field contains the business type slug (e.g. "tree_service", "painting", "hvac") — use it to look up the correct benchmark row directly from the context tables below rather than guessing the vertical from the name or market.
-
-**CONTACT STORY — DATA FIRST, CONTEXT SECOND:**
-The \`servicing\` field contains the authoritative contact dates:
-- \`lastAttemptedContact\` (LAC) = the most recent date TSI called this client
-- \`lastClientResponse\` (LCR) = the most recent date the client actually spoke with TSI
-- \`daysSinceLAC\` / \`daysSinceLCR\` = computed days from today
-
-**Lead with the PERFORMANCE DATA, then contextualize the contact situation:**
-
-CORRECT FRAMING EXAMPLE: "The campaign is clearly performing — 100 call clicks in 50 days — and we haven't connected with you in 68 days to walk through those results together. That's why I'm calling now."
-
-WRONG: "It appears there's been a long stretch without talking to the customer." (blame, backward-looking)
-WRONG: "TSI hasn't been proactive enough about reaching out." (mea culpa)
-WRONG: "We should have been in better contact." (apology)
-
-When daysSinceLCR is high (client hasn't responded): this is a client-avoidance pattern. TSI has been calling. Frame it as: "We've been trying to reach you — I'm glad we finally connected. Let me show you what's been happening while we've been calling."
-
-When daysSinceLAC is high (TSI hasn't called): acknowledge this as a commitment going forward, not a confession: "You're going to have a dedicated point of contact checking in monthly from now on."
-
-The teamDivision / serviceTeam tells you WHO the CSL is — use their name if available.
-
-**BILLING DECLINE FRAMING:**
-If paymentStatus = "PAST_DUE" or agentCancelNotes mention billing issues:
-- The primary goal becomes: fix the payment situation first, then save the account.
-- Frame the conversation as: "Before we talk about whether to stay, let's make sure we can actually keep the account active. Our billing team can work with you on the balance — would it help to have that conversation first?"
-- Do NOT treat billing decline as a reason to skip S1 and go straight to discounts. Fix-payment-first, then value conversation.
-- Billing decline + long-term client = likely cashflow issue, not a value dissatisfaction issue. Distinguish these.
-
-**POSITIVE, SOLUTION-ORIENTED LANGUAGE — NON-NEGOTIABLE:**
-This brief's job is to give the agent the strongest possible case for staying. Every sentence should move toward a solution, not a confession.
-
-BANNED: anything that assumes TSI fault from absent data. If data is unavailable, do NOT invent a problem. "We couldn't fetch your GBP data" does NOT mean "TSI never set up your GBP" — those are completely different statements.
-
-BANNED PHRASES: "we dropped the ball," "we should have been in better contact," "we let you down," "we never activated," "I want to apologize," "it appears we neglected," "clearly we didn't deliver."
-
-REQUIRED: Lead with what's WORKING, then contextualize the situation.
-- If GBP has strong impressions but low call clicks → lead with the impressions, then offer to close the call-click gap
-- If the client hasn't spoken to anyone in 68 days but the campaign is performing → lead with the performance, then acknowledge the communication gap as something you're fixing now
-- If data is missing → focus entirely on what IS there (tenure, pages built, directories synced)
-
-Forward-looking commitments replace backward-looking confessions:
-WRONG: "We haven't published content in 45 days."
-RIGHT: "We're publishing 2 new geo pages this week."
-
-The gap between what exists and what the client perceives IS the retention case. The agent's job is to close that gap with new information, not to argue with the client or apologize for it.
-
-**CONTENT INTELLIGENCE — BE SPECIFIC:**
-When recommending content improvements, name the specific type, not just "add more pages":
-- SERVICE PAGES: "We'll publish a dedicated page for [specific service]" (e.g., "emergency HVAC repair" not "services")
-- GEO PAGES: "We'll add a [City] page so you appear in local searches for [City] + [service]"
-- FAQ PAGES: "A Q&A page on '[common question in this vertical]' captures people researching before they call"
-- HYPER-LOCAL BLOG: "A blog post like 'Best time to repaint your [city] home' builds topical authority for local search"
-- The websitePageInventory field shows the actual current pages — reference what's already there and what specific type is missing. "You have 3 service pages — we'll add 2 geo pages and 1 FAQ page this month."
-- Old clients (high tenureMonths) may have legacy content from early in their subscription. Acknowledge what exists and suggest specific modern additions that would lift rankings now.
-
-**COMPETITOR INTELLIGENCE:**
-The primary source for competitor data is \`cancellationIntel.competitor\` — this is the competitor the client named directly in Falcon when submitting the cancellation request. Check this field first. If it is non-null and non-empty, that is the confirmed competitor.
-Secondary source: agentCancelNotes or the cancel reason text may also mention a competitor by name.
-Rules:
-- If \`cancellationIntel.competitor\` is populated, use that exact name and include it in the competitors array. This is more reliable than notes-derived names.
-- If agentCancelNotes mentions a different or additional competitor, include that one too.
-- Use exact brand names in the competitors array (e.g., "Hibu", "Scorpion", "Thryv", "Yelp", "ReachLocal").
-- Do NOT attack competitors by name in the agent brief. Instead, anchor to what TSI provides that generic alternatives don't: dedicated account management, integrated platform (GBP + Website + Listings + CRM in one managed service), local market expertise, human review response.
-- Adjust the tone of opportunityActions to be differentiation-focused: "Here's what you'd lose that [competitor] doesn't offer."
-- If no competitor is named in either source, return an empty array for competitors.
-
-**SAVE SOLUTIONS — DO NOT REPEAT FAILED OFFERS:**
-\`cancellationIntel.saveSolutionsOffered\` contains the retention solutions already offered to this client during the current cancellation request (comma-separated string from Falcon). This is what the team already tried. \`cancellationIntel.priorSaves[].saveSolutions\` shows what was offered in prior saves.
-- CRITICAL: Do NOT recommend any solution that appears in \`saveSolutionsOffered\` or in \`priorSaves[].saveSolutions\`. If you recommend something that was already tried and failed, the agent will lose credibility on the call.
-- If a discount or financial offer was already in \`saveSolutionsOffered\`, do NOT lead with another financial offer — pivot to value demonstration instead.
-- Use the prior save history (\`priorSaves\`) to understand the pattern: repeat cancellers who have been saved with the same offer before need a fresh angle.
-- If \`saveSolutionsOffered\` is null or empty, no constraint applies — recommend the strongest available option.
-
-**CANCELLATION URGENCY:**
-If scheduledCancellation.pendingCancelDate is within 7 days of today, or if the cancel reason implies immediate departure:
-- Flag urgency explicitly in topRetentionHook — the agent needs to open with time sensitivity.
-- Do NOT lead with the urgency as a threat. Instead: "I'm reaching out because your account is scheduled to close on [date] — I want to make sure you've seen everything before that happens."
-- The value story (S1) still leads. Urgency sets the frame; the brief delivers the argument.
-
-**SECOND CANCEL — TONE ADJUSTMENT:**
-If cancellationHistory shows 1 or more prior cancel requests that were saved:
-- Acknowledge the pattern implicitly in topRetentionHook — "We've had this conversation before" energy, but not accusatory.
-- Lead with what's different now: new data points, recent improvements, the specific number that's changed.
-- Do NOT repeat the same talking points from what might have saved them last time. Use fresh, specific data.
-
-**FORWARD-LOOKING opportunityActions:**
-opportunityActions are promises TSI is making — specific things that will happen if the client stays, not descriptions of current gaps.
-- WRONG: "Your GBP impressions are low."
-- RIGHT: "We'll audit your GBP category and publish 3 service posts this week to drive call clicks."
-- WRONG: "Your website hasn't been updated."
-- RIGHT: "We'll publish a dedicated [specific service] page within 5 business days."
-Each action should be specific enough for an agent to read verbatim on the phone.
-
-**CONFIDENT topRetentionHook:**
-The topRetentionHook should be a data-backed statement the agent can say verbatim — not a vague claim.
-- BAD: "Your digital presence is strong."
-- GOOD: "In the last 90 days, [X] people searched '[top keyword]' and found your business — that's real demand for exactly what you do."
-- BAD: "You have a lot to lose."
-- GOOD: "You have a $[pipelineAtRisk] pipeline of active proposals in your CRM right now — that disappears on Day 1 of cancellation."
-Pick the single most compelling statistic and build the hook around it.
-
-The JSON object you return must include these additional fields at the root level:
-- "pitchFrame": one of "billing_first" | "competitive_defense" | "service_gap_own_and_fix" | "value_proof" | "urgency_window" | "relationship_save" — MUST match _precomputed.pitchFrame unless you have strong evidence to deviate
-- "contactStoryInterpretation": one of "client_avoidance" | "tsi_gap" | "healthy" | "unknown" — MUST match _precomputed.contactStory.interpretation
-- "saveabilityScore": one of "High Save Probability" | "Recoverable" | "Likely Lost" — MUST match _precomputed.saveabilityScore
-
-CRITICAL — ALREADY CANCELLED CLIENTS:
-If _precomputed.alreadyCancelledInFalcon is true, the client is already cancelled in Falcon (status = "Cancelled Client"). This is NOT a pending cancellation — this is a closed account. Do NOT build a standard retention pitch. Instead:
-- pitchFrame should still be used for tone, but acknowledge this is a reconnect/rescue situation
-- cancelReasonAnchor should reflect that the account is already closed
-- opportunityActions should focus on a win-back approach if appropriate, or acknowledge this may be too late
-- The saveabilityScore will be Likely Lost — honor that in how you write the brief
-- "competitors": array of named brand competitors (empty array if none named)
-- "urgencyFlag": true if cancel date is within 7 days, false otherwise
-- "cancellationType": brief label for the primary cancel driver (e.g. "billing_decline", "competitor_switch", "no_roi", "service_issue")
-
-Rules:
-- opportunityActions: 2–4 specific, actionable items. These are promises TSI is making to improve. Make them realistic and grounded in actual available data.
-- lossAssets: 3–6 items, ordered by timing (Day 1 first). Use actual numbers from their data where possible.
-- insights: only for subscribed products (${insightSections.join(', ')}). Use real numbers. Reserve high urgency for genuine gaps.
-- Return only the JSON object.
-
-**CRITICAL — OUTPUT FORMAT:**
-Your ENTIRE response must be a single valid JSON object starting with { and ending with }. No reasoning text. No preamble. No explanation before or after. The JSON is the only output.`;
+Insights — one entry per subscribed product:
+${insightsSpec}`;
 }
 
 export async function runAnalyst(

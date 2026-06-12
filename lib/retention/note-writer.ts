@@ -111,26 +111,24 @@ function buildNotePrompt(
 
   const isUnderContract = brief.agentBrief?.contractNote?.includes('UNDER CONTRACT') ?? false;
 
-  return `You are writing a SCANNABLE internal Freshdesk note for a CSR who will dial this client in the next 60 seconds. Write clean HTML using ONLY: <b>, <br>, <ul>, <li>, <hr>. No paragraphs. No narration. Bullets only.
+  return `You are transcribing a retention brief into a Freshdesk internal note. Write clean HTML using ONLY: <b>, <br>, <ul>, <li>, <hr> tags.
+
+PRIMARY RULE — DO NOT PARAPHRASE OR REWRITE. Copy the actual content from the brief data verbatim. Preserve all numbers, names, dollar amounts, and specific language exactly as written. If the brief says "385 people called from Google," the note says "385 people called from Google" — not "strong Google performance" or "meaningful call activity." Rewriting destroys the specificity that makes this brief valuable.
 
 TWO REGISTERS — CRITICAL:
-The "Before you dial" section (Snapshot, Cancel read, Lead with, Context, TSI, Notable bullets) is INTERNAL — the agent reads it privately. You MAY include honest TSI context here, including LCR issues and service situation. Do NOT reference absent platform data or data limitations — if a platform has no data, simply don't mention it.
-The Section 1 and Section 2 scripts are SPOKEN TO THE CLIENT. NEVER include TSI failure language, apologies, or "we haven't done X" in scripts. Scripts must be forward-looking, confident, and specific.
+The "Before you dial" section is INTERNAL — the agent reads it privately. You MAY include honest TSI context here. Do NOT reference absent platform data or data limitations.
+The Section 1 and Section 2 scripts are SPOKEN TO THE CLIENT. NEVER include TSI failure language, apologies, or "we haven't done X." Scripts must be forward-looking, confident, and specific.
 
-PRODUCT NAMING — CRITICAL: Never use vendor names. Always use TSI product names: "BMP" or "Growth Management" (not vcita), "Directories" (not Yext), "Website" (not Duda). GBP / Google Business Profile is fine.
+PRODUCT NAMING — CRITICAL: Never use vendor names. "BMP" not vcita · "Directories" not Yext · "Website" not Duda · GBP is fine.
 
-BREVITY AND FRAMING RULES:
-- clientSnapshot: 1 bullet, max 20 words. Who they are + one specific positive number. E.g. "8-month Florida roofer, 720 monthly site visitors, canceling June 24."
-- cancelReasonRead: 1 bullet, max 20 words. The STRATEGIC CONTEXT for this call — what the agent needs to prepare, framed as a situation to navigate. NOT a blame statement. E.g. "Third cancel, hasn't seen results — share GBP data as new info they haven't seen." NOT "client frustrated because TSI failed X."
-- openingPosture: 1 bullet, max 20 words. What human acknowledgment opens this call. Situational, not a data point. E.g. "They haven't connected with anyone in 68 days — acknowledge that warmly before anything else."
-- factsToDeployLater: 1 bullet, max 20 words. The single best data point to introduce as news, not a counter-argument. E.g. "135 Google Maps navigations in 90 days — share as something they probably haven't seen yet."
-- verticalNote: 1 bullet, max 20 words. Where this client CAN GET TO, not where they're falling short. E.g. "Florida roofing in peak storm season — highest-value window of the year."
-- Notable: Skip this bullet entirely unless there is a GENUINELY STRONG positive signal (strong GBP metrics, named leads sitting in CRM, high review count). Do NOT use this bullet to surface problems or gaps.
-- Section 1 agentScript: 2-3 sentences. Lead with positive data → state one concrete action happening this week → yes/no close. ZERO references to what hasn't been done.
-- Each commitment: "<b>specific action starting this week</b> → the RESULT for the client" — 15 words max. Positive action, not a problem admission.
-- Section 2 script: 2 sentences. First: what specifically disappears with a real number. Second: "Is it okay if all of that happens?"
-- Each loss item: "<b>asset with key number</b> · timing · one-phrase business consequence"
-- TOTAL NOTE: as long as it needs to be, no shorter. Quality over word count. If this client has thin data, write a thinner note honestly — don't pad.
+TRANSCRIPTION RULES:
+- Pull each field's content from the brief JSON. Copy verbatim — do not rewrite, summarize, or improve it.
+- Scripts (agentScript fields): copy verbatim. Do not condense to 2 sentences unless the field is already short.
+- Commitments: copy title and description verbatim from the commitments array.
+- Loss items: copy asset, disappearsBy, and impact verbatim from lossTimeline. Preserve numbers exactly.
+- agentBrief fields (clientSnapshot, cancelReasonRead, leadWith, verticalNote): copy verbatim from agentBrief.
+- Notable bullet: only add if the brief data contains a genuinely strong positive signal not already covered above. Skip if nothing stands out.
+- Bullets only — no paragraph prose anywhere in the output.
 ${isUnderContract ? '\nCONTRACT CLIENT: Put the contract callout FIRST in the Before You Call section. The tone is patient — more time, not panic.' : ''}
 
 Client: ${clientName}

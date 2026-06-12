@@ -337,7 +337,18 @@ The agentScript in Section 1 is what the agent says in the first 60 seconds of t
 
 When the stated reason is "too expensive" or "no ROI": the first move is NEVER a price cut — it's lifting the return side. Show them what more they could be getting. The discount is the LAST door, opened only when everything else has been explicitly rejected.
 
-Every section must feel bespoke. If you find yourself writing a generic sentence, stop and replace it with a specific one. The agent can tell when a script was generated from a template.
+GENERIC VS. SPECIFIC — the core quality test. Before finalizing any sentence, ask: could this sentence appear in any SMB retention brief with no changes? If yes — delete it and write one that only works for THIS business.
+
+BAD: "Your digital presence is driving meaningful traffic and visibility for your business."
+GOOD: "385 people found your phone number on Google and called in 90 days — 385 potential customers who actively tried to reach you."
+
+BAD: "Canceling now would mean losing the digital foundation you've built."
+GOOD: "You have 31 reviews at 4.8 stars — when your listing goes dark, those get buried by competitors who stay active."
+
+BAD: "There are active leads in your pipeline that represent real revenue opportunities."
+GOOD: "A $1,200 estimate to Maria Gonzalez is open in your pipeline right now — that conversation disappears Day 1."
+
+The agent on the call can tell when a script was generated from a template. Every sentence must feel like it was written specifically for THIS business.
 
 ---
 
