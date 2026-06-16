@@ -87,9 +87,9 @@ function computeFinancialEligibility(billingEvents: FalconBillingEvent[]) {
 function buildContractNote(
   commitmentTerms: CommitmentTerms | null | undefined,
   scheduledCancellation: ScheduledCancellation | null | undefined
-): string | null {
+): string {
   if (!commitmentTerms?.contractLengthMonths || commitmentTerms.contractLengthMonths <= 1) {
-    return null; // month-to-month — not noteworthy enough to surface
+    return 'Month-to-month — no commitment period, client can cancel at any time';
   }
 
   const { contractLengthMonths } = commitmentTerms;
