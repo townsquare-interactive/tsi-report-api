@@ -146,6 +146,8 @@
 
 Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is correct.
 
+**Cross-account GPID filter (added 2026-06-16):** `buildActivityData()` now accepts a `gpid` parameter (passed from `getClientById` via `client.gpid`). After the type-based blocklist, a second filter removes any ticket whose body text contains a GPID pattern (`/\bTI\s+[A-Z][A-Z0-9]{5,14}\b/g`) that doesn't match the current client's GPID. Tickets with no GPID in the body are always kept. Root cause: Falcon's `activities(limit: 100)` query returns all tickets for a Falcon client ID without GPID validation — a misfiled After-Hours STA ticket for `TI AFTERHO001Z` (ASUS Plumbing) appeared in `TI ACESPL001`'s activity feed because both were under the same Falcon client ID. The analyst read "permanently closed Google Business Profile" from that ticket body and fabricated a GBP suspension narrative. This filter prevents cross-account contamination regardless of the filing error source.
+
 **GraphQL aliases required:** `ticketType: type`, `ticketStatus: status`, `interactionType: type`, `interactionStatus: status`, `interactionCreatedAt: createdAt` — avoids type conflicts in the union.
 
 ---
@@ -689,4 +691,40 @@ TypeScript types for the retention pipeline.
 
 **Cancellation History benchmark table (updated):** Added rows for `competitorsNamed`, `priorSaveSolutions`, `currentScheduledCancellation.saveSolutions`, and `currentScheduledCancellation.competitor`.
 
-**`cancellation_history` output dimension (updated):** `actual` object now includes `competitorsNamed`, `currentCompetitor`,
+**`cancellation_history` output dimension (updated):** `actual` object now includes `competitorsNamed`, `currentCompetitor`, and `saveSolutionsAlreadyOffered`. Narrative and action instructions updated to surface competitor name and warn the CSR if prior save solutions have already been exhausted.
+
+**TICKET SUBJECT + BODY READING rule (updated):** Model now reads both `subject` AND `body` when classifying open tickets as real service gaps vs. workflow artifacts.
+
+---
+
+## Fable 5 Prompt Improvements (2026-06-12)
+
+Root cause identified by Anthropic's claude-fable-5 (Mythos-class model): **instruction overload / skim-compliance**. 300–400 line prompts with 20+ equal-weight CRITICAL sections cause models to satisfy every rule shallowly rather than deeply engaging. Changes below address this across all three narrative prompt files.
+
+### lib/retention/analyst.ts
+
+**Prompt rewrite — 255 lines → 90 lines:**
+
+Previous prompt had 20+ CRITICAL instruction blocks all weighted equally (NULL DATA, ZERO DATA, DUDA UNPUBLISHED, BANNED PHRASES, ABSENT DATA, SOCIAL, GBP DATA, etc.) causing skim-compliance. Replaced with:
+
+1. **Quality Contract (4 falsifiable rules, top of prompt):**
+   - Evidence requirement: every claim must cite a specific number from input data
+   - Delete the generic: if a sentence would be true for any SMB client, delete it
+   - Cap findings: opportunityActions 2–3 max, pick by evidence strength
+   - Platform focus: one most-anomalous metric per platform, skip if nothing anomalous
+
+2. **_precomputed block surfaced as highest priority:** `pitchFrame`, `saveabilityScore`, `contactStory.interpretation`, and `websitePublishInterpretation` are injected as `"READ FIRST, THESE OVERRIDE YOUR ANALYSIS"` — not buried in a CRITICAL block that gets skimmed.
+
+3. **Hard constraints compressed to a bullet list:** All data rules (Z clients, null data = skip, vendor names, failed offers, etc.) in one compact block instead of 8 separate CRITICAL sections.
+
+4. **One platform rule:** "For each subscribed platform with data, identify the SINGLE most anomalous metric vs. benchmark for this client's tenure tier. Write only about that. Skip platforms where nothing is anomalous." Replaces 6+ per-platform instruction blocks.
+
+5. **opportunityActions capped at 2–3:** Previous cap was 2–4. Fable 5 identified padding as a quality killer.
+
+### lib/retention/formatter.ts
+
+**Generic style prose replaced with concrete contrast examples:**
+
+Previous: "Every section must feel bespoke. If you find yourself writing a generic sentence, stop and replace it with a specific one. The agent can tell when a script was generated from a template."
+
+Replaced with three BAD/GOOD pairs showing exactly what generic vs. specific looks like — numbers, names, specific assets — so the model has concrete examples to pattern-match against rather 
