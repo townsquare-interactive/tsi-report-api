@@ -254,7 +254,10 @@ function isAccountResolutionTicket(ticket: RawTicket): boolean {
   return /account\s*resolution/i.test(ticket.ticketType ?? '');
 }
 
-function buildActivityData(activities: RawActivity[], periodDays: number): ActivityData {
+// GPID pattern: "TI " followed by uppercase alphanumeric code (e.g. "TI ACESPL001", "TI AFTERHO001Z")
+const FALCON_GPID_RE = /\bTI\s+[A-Z][A-Z0-9]{5,14}\b/g;
+
+function buildActivityData(activities: RawActivity[], periodDays: number, gpid?: string | null): ActivityData {
   const cutoff = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
 
   const allTickets = activities.filter((a): a is RawTicket => a.__typename === 'Ticket');
@@ -265,7 +268,20 @@ function buildActivityData(activities: RawActivity[], periodDays: number): Activ
     (t) => !isCancelTicket(t) && !isARTicket(t) && !isAccountResolutionTicket(t)
   );
 
-  const ticketsInPeriod = tickets.filter((t) => new Date(t.createdAt) >= cutoff);
+  // Filter out misfiled tickets: if a ticket body explicitly references a GPID that
+  // doesn't match this client's GPID, the ticket belongs to a different account and
+  // must not contaminate this client's activity feed.
+  const normalizedGpid = gpid ? gpid.replace(/\s+/g, '').toUpperCase() : null;
+  const cleanTickets = normalizedGpid
+    ? tickets.filter((t) => {
+        if (!t.body) return true;
+        const found = t.body.match(FALCON_GPID_RE);
+        if (!found || found.length === 0) return true;
+        return found.some((g) => g.replace(/\s+/g, '').toUpperCase() === normalizedGpid);
+      })
+    : tickets;
+
+  const ticketsInPeriod = cleanTickets.filter((t) => new Date(t.createdAt) >= cutoff);
   const interactionsInPeriod = interactions.filter(
     (i) => new Date(i.interactionCreatedAt) >= cutoff
   );
@@ -430,7 +446,7 @@ export async function getClientById(
       : null,
   };
 
-  const activities = buildActivityData(raw.activities ?? [], periodDays);
+  const activities = buildActivityData(raw.activities ?? [], periodDays, client.gpid);
 
   return { client, activities };
 }
