@@ -348,6 +348,10 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 
 **Commitment terms (added 2026-05-20):** `contractTerms` block included in analyst snapshot: `contractLengthMonths`, `contractType` (month-to-month/3-month/6-month), `contractEndDate`, `isInCommitment`, `daysRemainingInCommitment`. Analyst informs the model of contract status context without generating date calculations.
 
+**GBP zero data pre-computation (added 2026-06-16):** `_precomputed.gbpDataQuality` — if ALL key GBP metrics are zero (businessImpressions, callClicks, directionRequests, mapImpressions), the analyst snapshot injects `gbpDataQuality: "ALL_ZEROS: ..."` instructing the model to treat GBP as null and exclude it from analysis. Root cause: GBP API can return all-zeros silently on non-error conditions (listing not found, period with no data), which was causing the model to infer suspension or TSI setup failure. Without this guard, zero data + a contaminated ticket body produced fabricated GBP suspension narratives.
+
+**Model upgraded 2026-06-16:** Analyst now uses `claude-opus-4-8` (previously `claude-sonnet-4-6`). Analyst is the highest-leverage agent — it makes all interpretive decisions (pitchFrame, saveabilityScore, cancelReasonAnchor, opportunityActions). Opus improves quality contract adherence, data/inference separation, and calibration on ambiguous signals.
+
 **Localization enrichments (added 2026-05-28):**
 - **Review text + reviewer names:** GBP review samples now include `comment` (first 150 chars) and `reviewer` (when not Anonymous). Analyst instructed to quote actual customer language verbatim — "Sarah M. left a 5-star review saying '...'" — far more compelling than bare ratings. The `GbpReview.comment` field was already fetched by `getGbpReviews()`; it was being silently dropped from the analyst snapshot.
 - **GBP search keywords:** `gbp.searchKeywords` now passed to analyst from `GbpInsights.searchKeywords`. Analyst instructed to ground impression counts in actual search terms: "X people searched '[keyword]' and found you" instead of an abstract impression count.
@@ -421,7 +425,7 @@ Falcon returns all Freshdesk ticket types unfiltered; blocklist approach is corr
 
 **Free month cap logic:** `buildSection3Guidelines(monthlyPrice)` — if `analyst.monthlyPrice > 500`, free month = $500 credit (not full month). If ≤ $500, full free month applies.
 
-**Commitment terms (added 2026-05-20):** `buildContractNote(commitmentTerms)` computes contract status in TypeScript (not LLM-generated, to avoid hallucination on date calculations). Returns null for month-to-month clients. Returns formatted string for 3- or 6-month contracts with: term label, end date, days remaining (if active) or completion date (if expired). Hardcoded as `contractNote` in `agentBrief` JSON output. `runFormatter` accepts `commitmentTerms: CommitmentTerms | null = null`.
+**Commitment terms (updated 2026-06-16):** `buildContractNote(commitmentTerms)` computes contract status in TypeScript. Now always returns a non-null `string` (return type changed from `string | null`). For month-to-month clients: returns `"Month-to-month — no commitment period, client can cancel at any time"`. For active 3/6-month contracts: returns `"⏰ UNDER CONTRACT — ..."` with end date and days remaining. For completed contracts: returns completion date. Previously returned `null` for M2M, which caused commitment terms to be invisible in briefs for all M2M clients.
 
 **max_tokens:** 5000 (increased from 4000 to accommodate Section 3 escalation sequence)
 
