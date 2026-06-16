@@ -1,6 +1,6 @@
 // Agent 2: Retention Analyst
 //
-// Model: claude-sonnet-4-6
+// Model: claude-opus-4-8
 //
 // Reasoning step — evaluates raw client data and builds the retention case.
 // Produces enriched AnalystOutput consumed by the Formatter (Agent 3):
@@ -245,6 +245,18 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
     ? Math.ceil((new Date(effectiveCancelDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
     : 0;
 
+  // GBP zero data quality — if all key metrics are zero, the API may have returned
+  // a silent failure (zeros instead of an error). The model must NOT infer suspension,
+  // setup failure, or TSI fault from zero data alone — that led to fabricated narratives.
+  const gbpAllZeros = gbp !== null && gbp !== undefined &&
+    (gbp.businessImpressions ?? 0) === 0 &&
+    (gbp.callClicks ?? 0) === 0 &&
+    (gbp.directionRequests ?? 0) === 0 &&
+    (gbp.mapImpressions ?? 0) === 0;
+  const gbpDataQuality: string | null = gbpAllZeros
+    ? 'ALL_ZEROS: GBP returned all-zero metrics for every key dimension. DO NOT infer suspension, TSI setup failure, or inactive listing from zero data alone — zero GBP data most commonly indicates a silent API non-response (the endpoint returned 0 instead of an error). REQUIRED ACTION: treat gbp in the snapshot as null. Exclude GBP from analysis, opportunityActions, lossAssets, topRetentionHook, and insight sections. If the client has GBP subscribed, note only that GBP data was unavailable for this period — do NOT state or imply the listing is inactive, closed, or suspended.'
+    : null;
+
   const snapshot = JSON.stringify({
     client: {
       name: client.name,
@@ -455,6 +467,7 @@ function buildAnalystPrompt(data: FetchedData, periodDays: number, agentNotes: s
         explanation: contactStoryExplanation,
       },
       websitePublishInterpretation,
+      gbpDataQuality,
     },
   }, null, 2);
 
@@ -577,7 +590,7 @@ export async function runAnalyst(
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: 'claude-opus-4-8',
       max_tokens: 6000,
       messages: [{ role: 'user', content: buildAnalystPrompt(data, periodDays, agentNotes) }],
     }),
@@ -585,7 +598,7 @@ export async function runAnalyst(
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => '');
-    throw new Error(`Analyst (Sonnet) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
+    throw new Error(`Analyst (Opus) error: ${response.status} ${response.statusText}${errBody ? ` — ${errBody.slice(0, 200)}` : ''}`);
   }
 
   const result = await response.json() as { content: Array<{ type: string; text: string }> };
