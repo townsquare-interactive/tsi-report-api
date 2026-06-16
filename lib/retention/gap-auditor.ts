@@ -244,7 +244,7 @@ function buildGapAuditorPrompt(data: FetchedData, periodDays: number): string {
           siteAlias: duda.siteAlias,
         }
       : null,
-    listings: yext
+    listings: hasListings && yext
       ? {
           // locationId === null means Yext entity was NOT FOUND for this GPID.
           // All-zeros data when locationId is null is NOT real data — it's an entity-lookup failure.
@@ -737,6 +737,4 @@ export async function runGapAuditor(data: FetchedData, periodDays = 90): Promise
     if (!match) throw new Error('No JSON in gap auditor response');
     return JSON.parse(match[0]) as GapAuditResult;
   } catch {
-    throw new Error(`Gap auditor returned unparseable JSON: ${text.slice(0, 300)}`);
-  }
-}
+    throw new Error(`Gap auditor returned unparseable JSON: ${text.slice(0, 

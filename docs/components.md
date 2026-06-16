@@ -731,4 +731,48 @@ Previous prompt had 20+ CRITICAL instruction blocks all weighted equally (NULL D
 
 Previous: "Every section must feel bespoke. If you find yourself writing a generic sentence, stop and replace it with a specific one. The agent can tell when a script was generated from a template."
 
-Replaced with three BAD/GOOD pairs showing exactly what generic vs. specific looks like — numbers, names, specific assets — so the model has concrete examples to pattern-match against rather 
+Replaced with three BAD/GOOD pairs showing exactly what generic vs. specific looks like — numbers, names, specific assets — so the model has concrete examples to pattern-match against rather than following abstract style rules.
+
+### lib/retention/note-writer.ts
+
+**Prompt reframe — "transcription" model:**
+
+Previous prompt treated note-writer as a summarizer. Replaced with pure transcription framing: "PRIMARY RULE — DO NOT PARAPHRASE OR REWRITE. Copy the actual content from the brief data verbatim." Rationale: note-writer was the primary source of specificity loss — turning "385 people called from Google" into "strong Google performance." All numbers, names, dollar amounts now explicitly required to be copied verbatim.
+
+---
+
+## 2026-06-16 Changes
+
+### lib/falcon.ts
+
+**Cross-account GPID filter in `buildActivityData()`:**
+
+Added `gpid?` parameter to `buildActivityData(activities, periodDays, gpid?)`. After the existing type-based ticket blocklist (cancel/AR/AccountResolution), tickets whose body text contains a GPID pattern (`/\bTI\s+[A-Z][A-Z0-9]{5,14}\b/g`) that doesn't match the current client's GPID are dropped. Tickets with no GPID in the body are always kept.
+
+`FALCON_GPID_RE` added at module scope. Call site in `getClientById` passes `client.gpid`.
+
+Root cause: ticket `#1149994` (an After-Hours STA ticket for TI AFTERHO001Z) was misfiled under Falcon client ID 135345 (Aces Plumbing / TI ACESPL001). The body said "Client's Google Business profile shows as permanently closed." Analyst read it as real account data and fabricated a GBP suspension narrative.
+
+### lib/retention/analyst.ts
+
+**Model upgrade: `claude-sonnet-4-6` → `claude-opus-4-8`**
+
+Analyst is the highest-leverage agent (makes all interpretive decisions: pitchFrame, saveabilityScore, cancelReasonAnchor, opportunityActions, lossAssets). Opus has better quality-contract adherence and data/inference separation.
+
+**GBP all-zeros guard (`_precomputed.gbpDataQuality`):**
+
+If ALL key GBP metrics are zero (businessImpressions, callClicks, directionRequests, mapImpressions), `gbpDataQuality` is set to `"ALL_ZEROS: ..."` — instructs the model to treat the GBP snapshot as null and exclude it from all analysis. Zero GBP data is most commonly a silent API non-response (returns zeros instead of an error), not evidence of a suspended or inactive listing. Without this guard, zero data was used to build fabricated suspension narratives.
+
+`gbpDataQuality` added to `_precomputed` block alongside `pitchFrame`, `saveabilityScore`, `contactStory`, and `websitePublishInterpretation`.
+
+### lib/retention/formatter.ts
+
+**`buildContractNote()` always returns a string:**
+
+Return type changed from `string | null` to `string`. For month-to-month clients (`contractLengthMonths <= 1` or null), now returns `"Month-to-month — no commitment period, client can cancel at any time"` instead of `null`. Previously M2M clients had invisible commitment terms in every brief — note-writer skipped rendering when contractNote was null.
+
+### lib/retention/gap-auditor.ts
+
+**Listings snapshot gated on subscription (`hasListings && yext`):**
+
+Changed `listings: yext ? {...}` to `listings: hasListings && yext ? {...}`. Previously, non-Yext subscribers still received raw Yext data (syncedListings: 0, totalListings: 0) in the gap-auditor snapshot because the gating was on yext presence alone (not on whether the client subscribed to Directories). The gap-auditor model then treated the zeros as real sync failure data, generating "listing sync failure" findings for clients who don't have the Directories product. The `subscribedProducts.listings` flag already correctly showed `false` for non-subscribers — but the raw Yext object was still present, causing the model to reason about it anyway. Fix mirrors the gating already applied in `analyst.ts` (line 328: `listings: hasListings && yext ? {...} : null`).
